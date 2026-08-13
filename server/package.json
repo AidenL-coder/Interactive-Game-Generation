@@ -1,0 +1,18 @@
+{
+  "name": "iwg-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Backend for personalized interactive world generation: wraps the Claude API to turn source text + user profile + choice history into structured world-state JSON.",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "iwg-shared": "*"
+  }
+}

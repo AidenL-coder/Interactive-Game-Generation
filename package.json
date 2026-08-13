@@ -1,0 +1,15 @@
+{
+  "name": "interactive-game-generation",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personalized interactive world generation: narrative + user profile -> evolving structured world-state -> walkable 3D scene.",
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev --workspace=server",
+    "dev:web": "npm run dev --workspace=web"
+  }
+}
