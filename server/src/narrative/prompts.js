@@ -14,7 +14,7 @@ function profileBlock(profile) {
   return lines.join("\n");
 }
 
-export function buildSystemPrompt({ profile, sourceText, ablation }) {
+export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldState }) {
   const parts = [];
 
   parts.push(
@@ -34,6 +34,30 @@ export function buildSystemPrompt({ profile, sourceText, ablation }) {
         "into the setting, characters, and choices naturally (do not just namedrop " +
         `them). Player profile:\n${profileBlock(profile)}`
     );
+
+    // Personalization here is otherwise static (stated interests only, never
+    // adapting) — docs/research.md flags this as a limitation and points to Wu et
+    // al.'s incremental persona-inference as the natural extension. This asks the
+    // model to do a lightweight version of that itself each turn: infer *implicit*
+    // taste from the choices actually made (not just what the player said up front),
+    // and carry a running weight vector forward via the existing free-form
+    // `state_updates` field rather than adding new schema/infra.
+    if (ablation?.evolving) {
+      const inferred = lastWorldState?.state_updates?.inferred_preferences;
+      parts.push(
+        (inferred && Object.keys(inferred).length
+          ? `Running inferred preference weights from prior turns (0-1 each): ${JSON.stringify(inferred)}. ` +
+            "Update these based on the choice that was just made, and let them (not just the stated " +
+            "interests above) shape what the next scene and choices emphasize."
+          : "Also infer *implicit* preferences from the choices the player actually makes as the story " +
+            "progresses (e.g. do they gravitate toward combat, dialogue, caution, risk-taking, " +
+            "exploration?) — these can diverge from their stated interests, and matter more the longer " +
+            "the session runs.") +
+          " Report your current best estimate as `state_updates.inferred_preferences`, an object of " +
+          "short preference-name -> 0-1 weight pairs. Reuse the same preference names turn to turn " +
+          "so they can be tracked as a running estimate, not reset each time."
+      );
+    }
   } else {
     parts.push(
       "Generate for a generic, unspecified protagonist. Do not personalize to any " +
@@ -51,6 +75,7 @@ export function buildSystemPrompt({ profile, sourceText, ablation }) {
           "that summary alone."
   );
 
+  const trackPreferences = ablation?.personalization && ablation?.evolving;
   parts.push(
     "Scene constraints for `emit_scene`:\n" +
       `- biome ∈ {${BIOMES.join(", ")}}, mood ∈ {${MOODS.join(", ")}}, ` +
@@ -59,7 +84,12 @@ export function buildSystemPrompt({ profile, sourceText, ablation }) {
       `[-${GROUND_HALF_EXTENT}, ${GROUND_HALF_EXTENT}] (this is the walkable ground ` +
       "plane's half-extent), spaced so the player can walk between them\n" +
       "- choices: 2-4 concrete, distinct actions the player can take next\n" +
-      "- narrative: 2-4 short second-person paragraphs describing the current beat"
+      "- narrative: 2-4 short second-person paragraphs describing the current beat" +
+      (trackPreferences
+        ? "\n- state_updates.inferred_preferences: REQUIRED every turn (see above) — an object of " +
+          "short preference-name -> 0-1 weight pairs, e.g. {\"combat\": 0.7, \"dialogue\": 0.3}. Do not " +
+          "omit this field."
+        : "")
   );
 
   return parts.join("\n\n");

@@ -16,6 +16,7 @@ export function createSession({ profile, sourceText, ablation }) {
     ablation: {
       personalization: ablation?.personalization ?? true,
       evolving: ablation?.evolving ?? true,
+      engine: ablation?.engine === "template" ? "template" : "llm",
     },
     history: [],
     lastWorldState: null,

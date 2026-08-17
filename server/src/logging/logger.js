@@ -18,10 +18,17 @@ function ensureDir() {
  * comparisons, latency/cost) — kept append-only and off the hot path's return value
  * so a logging failure never breaks a live session.
  */
+// sourceText can be arbitrarily long (a full chapter) — capped so the log stays a
+// reasonable size and greppable; full fidelity isn't needed for pairing sessions by
+// premise in eval/judge-batch.mjs, just enough to fingerprint/display it.
+const SOURCE_TEXT_LOG_CAP = 2000;
+
 export async function logGeneration({
   sessionId,
   turnIndex,
   ablation,
+  profile,
+  sourceText,
   turnMessage,
   worldState,
   usage,
@@ -33,6 +40,8 @@ export async function logGeneration({
     sessionId,
     turnIndex,
     ablation,
+    profile: profile ?? null,
+    sourceText: sourceText ? sourceText.slice(0, SOURCE_TEXT_LOG_CAP) : null,
     turnMessage,
     worldState: worldState ?? null,
     usage: usage ?? null,

@@ -71,6 +71,19 @@ non-LLM baseline is wanted for the paper.
 
 ## Relation to prior work surveyed this summer
 
+*This section covers the personalization-focused papers surveyed by the team over the summer.
+For a broader, actively-researched literature review — neural world models (Genie/GameNGen),
+one-shot LLM 3D/2D world synthesis (WorldGen, Word2World), LLM-driven interactive fiction with
+tracked game state (STORY2GAME, G-KMS), consistency-bug evaluation (ConStory-Bench), a direct
+positioning table against the nearest neighbors, an honest gap analysis of this repo's own
+implementation, and venue guidance for a publication target — see
+[`docs/literature-review.md`](literature-review.md). Short version: no existing system combines
+personalization + turn-by-turn choice-driven evolution + real rendered 3D + a formal
+ablation/LLM-judge evaluation harness the way this project does, but several neighbors do
+individual pieces of it more rigorously than this project currently does (see that doc's §4)
+— NeurIPS/ICML main track is likely a weaker fit than originally assumed below; see that doc's
+§6 for why.*
+
 - **User modeling from interaction**: Inaba & Takahashi (2018) predict topic interest
   from dialogue with a trained classifier; we instead let an LLM infer + apply
   preferences directly from stated interests and in-context choice history — closer to
@@ -113,15 +126,24 @@ non-LLM baseline is wanted for the paper.
 
 Automatic:
 - **Coherence/validity**: schema-valid structured output rate, prop-count and
-  placement bounds compliance, choice-count compliance (already enforced by the
-  Anthropic tool schema in `server/src/narrative/schema.js`, but worth reporting as a
-  reliability metric across ablations).
+  placement bounds compliance, choice-count compliance (the shape is forced by the
+  Anthropic tool schema in `shared/worldState.js`, but the model doesn't always honor
+  array-length/enum bounds in practice, so it's worth reporting as a reliability metric
+  across ablations — see `eval/score.mjs`).
 - **Personalization signal**: does `scene_t`/`narrative_t` text reference the stated
   interests/profile terms (simple keyword/embedding-similarity check) — compare
   personalization on vs. off.
-- **Continuity**: for `evolving=on`, check whether turn `t` references
-  entities/state introduced at turn `t-k` (a callback rate) — compare evolving on vs.
-  off.
+- **Continuity**: check whether turn `t` references entities/state introduced at
+  turn `t-k` for `k>=2` (a callback rate) — compare evolving on vs. off.
+  `k>=2` matters: the immediately preceding turn (`k=1`) reaches the model via the
+  chosen choice's own text regardless of the evolving flag (`turnMessage` = `The
+  player chose: "..."`), so crediting `k=1` overlap as "continuity" makes the
+  memoryless baseline look falsely continuous — confirmed empirically the first time
+  `eval/score.mjs` was run against real sessions. Even with `k>=2`, short sessions can
+  still show some leakage into the memoryless condition, since the per-turn state
+  summary + choice-text relay can carry a noun forward turn-by-turn without the model
+  ever seeing full history; only longer sessions and/or an LLM-judge pass can cleanly
+  separate that from genuine in-context recall.
 
 Human/LLM-judge (needed for the parts automatic metrics can't capture, per the
 recurring "the more specific the model, the better the results" and CoNoder-style
@@ -140,10 +162,47 @@ re-running the system.
 ## Known gaps / next steps
 
 - No real image/texture generation model wired in yet (procedural fallback only) —
-  needed before the "AI 2D textures" half of the pipeline is real.
-- No retrieval over history, no trained per-user component — currently prompt-only
-  personalization, stated as a limitation above.
-- No automatic metric implementation yet, only the logging substrate — `docs/research.md`
-  vs. an `eval/` scoring script is the next gap to close.
-- No non-LLM baseline (template-based or fixed level generator) implemented for
-  contrast in the ablation table.
+  needed before the "AI 2D textures" half of the pipeline is real. Deliberately
+  deferred: needs a provider decision (OpenAI/Stability/other) and an API key neither
+  of which is available yet.
+- Personalization is no longer purely static. Beyond stated interests, the
+  personalization+evolving condition now asks the model to maintain
+  `state_updates.inferred_preferences` — a running 0-1 weight vector inferred from
+  the choices actually made (combat vs. dialogue vs. caution vs. exploration, etc.),
+  fed back into the system prompt each turn (`prompts.js buildSystemPrompt`). This is
+  still prompt-only (no retrieval, no trained per-user component — that part of the
+  limitation stands), but it is at least adaptive now, not fixed at session start.
+  Verified empirically: over a 4-turn test session where the player consistently
+  chose dialogue/investigation options over combat, the model's own tracked weights
+  moved accordingly turn to turn (dialogue 0.5→0.65, combat 0.2→0.1). Needed the
+  requirement stated twice — once in the personalization framing, once again as a
+  concrete bullet in the `emit_scene` constraints list — before the model reliably
+  populated it; the first placement alone was silently ignored.
+- Automatic metrics (`eval/score.mjs`) cover schema validity, personalization keyword
+  hit rate, and a heuristic entity-callback rate for continuity — all crude proxies.
+  Confirmed empirically to be an insufficient substitute for judgment, not just in
+  theory: the callback metric showed *zero* difference between evolving on/off even
+  on 6-turn sessions, but `eval/judge.mjs` (LLM-judge, blind pairwise comparison — see
+  below) correctly and decisively preferred evolving=on, catching a real coherence
+  break in the memoryless transcript (the antagonist's identity silently swapped
+  partway through, plus a garbled character name) and an unresolved plot thread that
+  the evolving condition actually paid off. Keyword/entity-overlap heuristics miss
+  this kind of failure entirely — it's a plot/character-identity break, not a vocab
+  difference. This is the strongest evidence so far that `evolving` matters, but it
+  came from the judge, not the automatic metric.
+- Non-LLM baseline implemented: `server/src/narrative/templateBaseline.js`, selected
+  via `ablation.engine = "template"`. Fixed recipe (seeded RNG + canned sentence
+  templates), no model call, no history — the floor the LLM conditions are compared
+  against in `eval/score.mjs`'s per-condition table.
+- LLM-judge implemented: `eval/judge.mjs <sessionIdA> <sessionIdB>` reconstructs two
+  sessions' transcripts from the log and asks Claude to blind-judge them (personalization
+  fit, narrative coherence, reactivity, overall), then reveals which ablation condition
+  produced which transcript for interpretation.
+- LLM-judge now also runs at scale: `eval/judge-batch.mjs` auto-pairs sessions sharing
+  the same source text + player profile that differ in exactly one ablation axis
+  (personalization/evolving/engine), judges every such pair, and aggregates win rates
+  per axis to `eval/out/judge-batch-summary.json`. Sample size so far is small (this
+  is dev-test data, not a real study — n=1 per axis in the first run) and each pair is
+  judged once in a fixed A/B order with no position-swap control for judge
+  position-bias; worth adding once sample size justifies doubling the judge-call cost.
+  The mechanism itself is verified working end to end.

@@ -31,7 +31,8 @@ body {
 }
 .start-form input[type="text"],
 .start-form input:not([type]),
-.start-form textarea {
+.start-form textarea,
+.start-form select {
   background: #1a1a1f;
   border: 1px solid #33333c;
   border-radius: 6px;
@@ -90,11 +91,20 @@ button:disabled { opacity: 0.6; cursor: default; }
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 46%;
-  overflow-y: auto;
+  max-height: 60vh;
 }
-.narrative-text { margin: 0; line-height: 1.5; white-space: pre-wrap; }
-.choice-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+/* Only the narrative scrolls internally — choice buttons and the free-text input
+   stay pinned below it so they're never hidden off-screen behind a long beat. */
+.narrative-text {
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  max-height: 26vh;
+  padding-right: 6px;
+  flex-shrink: 1;
+}
+.choice-buttons { display: flex; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
 .choice-buttons button {
   background: #26262e;
   color: #f4f1e8;
@@ -103,7 +113,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 }
 .choice-buttons button:hover:not(:disabled) { background: #33333c; }
 
-.freetext-row { display: flex; gap: 8px; }
+.freetext-row { display: flex; gap: 8px; flex-shrink: 0; }
 .freetext-row input {
   flex: 1;
   background: #1a1a1f;

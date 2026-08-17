@@ -6,6 +6,7 @@ export default function StartScreen({ onStart, busy, error }) {
   const [sourceText, setSourceText] = useState("");
   const [personalization, setPersonalization] = useState(true);
   const [evolving, setEvolving] = useState(true);
+  const [engine, setEngine] = useState("llm");
 
   function submit(e) {
     e.preventDefault();
@@ -16,7 +17,7 @@ export default function StartScreen({ onStart, busy, error }) {
         interests: interests.split(",").map((s) => s.trim()).filter(Boolean),
       },
       sourceText: sourceText.trim(),
-      ablation: { personalization, evolving },
+      ablation: { personalization, evolving, engine },
     });
   }
 
@@ -68,6 +69,14 @@ export default function StartScreen({ onStart, busy, error }) {
             Evolving narrative (vs. memoryless baseline)
           </label>
         </div>
+
+        <label>
+          Generation engine
+          <select value={engine} onChange={(e) => setEngine(e.target.value)}>
+            <option value="llm">Claude (generated)</option>
+            <option value="template">Template baseline (non-LLM, for comparison)</option>
+          </select>
+        </label>
 
         {error && <p className="error">{error}</p>}
 
