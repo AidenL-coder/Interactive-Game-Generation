@@ -10,6 +10,8 @@ import {
 } from "./proceduralTexture.js";
 import { applyPropTexture } from "./propTextures.js";
 import { attachSprite, SPRITE_TYPES } from "./propSprites.js";
+import { buildScatter } from "./scatter.js";
+import { heightAt, seedFromScene } from "./terrain.js";
 
 const EYE_HEIGHT = 1.7;
 const MOVE_SPEED = 6; // units/sec
@@ -30,6 +32,10 @@ const PASSABLE_PROPS = new Set(["water", "item"]);
 // How generous the "what am I looking at" test is, for the on-demand prop label.
 const FOCUS_MAX_DISTANCE = 9;
 const FOCUS_MIN_ALIGNMENT = 0.9; // ~25° cone around the view direction
+
+// Ground extends past the playable bounds so the terrain runs under the horizon ring
+// rather than ending in a visible edge.
+const HORIZON_MARGIN = 60;
 
 /** Builds a THREE.Group for a single prop entry from the model's scene.props array. */
 function buildProp(prop, mood) {
@@ -226,7 +232,15 @@ export class Scene3D {
     this.clock = new THREE.Clock();
     this.keys = new Set();
     this._onResize = this._onResize.bind(this);
-    this._onKeyDown = (e) => this.keys.add(e.code);
+    this._onKeyDown = (e) => {
+      this.keys.add(e.code);
+      // Walking up to something and acting on it is the point of having a 3D world at
+      // all — it turns exploration into the choice mechanism rather than a parallel
+      // activity happening behind a menu.
+      if (e.code === "KeyE" && this._focusProp && !this.playback) {
+        this.onInteract?.(this._focusProp);
+      }
+    };
     this._onKeyUp = (e) => this.keys.delete(e.code);
     this._animate = this._animate.bind(this);
 
@@ -241,9 +255,11 @@ export class Scene3D {
   _initThree() {
     const { clientWidth: w, clientHeight: h } = this.container;
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x87ceeb, 15, 45);
+    // Starts well beyond the play area so the horizon silhouettes fade into distance
+    // instead of the fog closing in around the player.
+    this.scene.fog = new THREE.Fog(0x87ceeb, 28, 78);
 
-    this.camera = new THREE.PerspectiveCamera(70, w / h, 0.1, 200);
+    this.camera = new THREE.PerspectiveCamera(70, w / h, 0.1, 240);
     this.camera.position.set(0, EYE_HEIGHT, 6);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -273,7 +289,10 @@ export class Scene3D {
     this.playback = null;
     this.onSay = null; // set by the UI to surface `say` action text
     this.onFocus = null; // set by the UI to surface the looked-at prop's label
+    this.onInteract = null; // set by the UI; fired when the player presses E on a prop
     this._focusLabel = null;
+    this._focusProp = null;
+    this._seed = 1;
     this._lightsUsed = 0;
     this._mood = "serene";
   }
@@ -312,7 +331,24 @@ export class Scene3D {
     // response can't paint itself onto the world that replaced it.
     this._sceneToken++;
 
-    const groundGeo = new THREE.PlaneGeometry(GROUND_HALF_EXTENT * 2, GROUND_HALF_EXTENT * 2);
+    this._seed = seedFromScene(scene);
+
+    // A flat plane is the single most "unfinished" thing in a 3D scene. Displacing the
+    // ground costs nothing at runtime and everything else (props, scatter, the player's
+    // eye height) samples the same height function so nothing floats or sinks.
+    const groundGeo = new THREE.PlaneGeometry(
+      GROUND_HALF_EXTENT * 2 + HORIZON_MARGIN,
+      GROUND_HALF_EXTENT * 2 + HORIZON_MARGIN,
+      96,
+      96
+    );
+    const gpos = groundGeo.attributes.position;
+    for (let i = 0; i < gpos.count; i++) {
+      // geometry is still in its own XY plane here; it becomes XZ after the rotation below
+      gpos.setZ(i, heightAt(gpos.getX(i), -gpos.getY(i), this._seed));
+    }
+    groundGeo.computeVertexNormals();
+
     const groundMat = new THREE.MeshStandardMaterial({
       map: groundTexture(scene.biome, scene.mood),
       roughness: 1,
@@ -321,6 +357,11 @@ export class Scene3D {
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.worldGroup.add(ground);
+
+    // Hundreds of instanced biome details plus a horizon ring, so the world reads as a
+    // place instead of a few objects on a lawn. Purely decorative and deterministic —
+    // deliberately not part of WorldState, so it can't affect spatial-consistency metrics.
+    this.worldGroup.add(buildScatter(scene, this._seed));
 
     // The procedural texture above renders immediately; a generated one (if the server
     // has an image-gen key) can take seconds, so it's fetched in the background and
@@ -339,12 +380,15 @@ export class Scene3D {
 
     // reset the player to a sensible spot each new scene rather than leaving them
     // possibly stranded outside the new ground extent
-    this.camera.position.set(0, EYE_HEIGHT, GROUND_HALF_EXTENT * 0.6);
+    const spawnZ = GROUND_HALF_EXTENT * 0.6;
+    this.camera.position.set(0, heightAt(0, spawnZ, this._seed) + EYE_HEIGHT, spawnZ);
+    this.camera.lookAt(0, this.camera.position.y, 0); // face the middle of the world
   }
 
   _addProp(prop, mood) {
     const group = buildProp(prop, mood ?? this._mood);
     group.userData.propId = prop.id;
+    group.position.y = heightAt(prop.x, prop.z, this._seed);
     this.worldGroup.add(group);
     this.propsById.set(prop.id, { group, prop: { ...prop } });
 
@@ -503,7 +547,7 @@ export class Scene3D {
       // stop short so we don't end up standing inside the object
       const dist = Math.max(dir.length() - STOP_DISTANCE, 0);
       pb.to = pb.from.clone().add(dir.normalize().multiplyScalar(dist));
-      pb.to.y = EYE_HEIGHT;
+      pb.to.y = heightAt(pb.to.x, pb.to.z, this._seed) + EYE_HEIGHT;
       pb.phase = "turn";
       pb.t = 0;
     }
@@ -525,7 +569,8 @@ export class Scene3D {
       pb.t += dt;
       const u = Math.min(pb.t / duration, 1);
       this.camera.position.lerpVectors(pb.from, pb.to, ease(u));
-      this.camera.position.y = EYE_HEIGHT;
+      this.camera.position.y =
+        heightAt(this.camera.position.x, this.camera.position.z, this._seed) + EYE_HEIGHT;
       if (u >= 1) advance();
       return;
     }
@@ -655,8 +700,16 @@ export class Scene3D {
     const label = best?.label ?? null;
     if (label !== this._focusLabel) {
       this._focusLabel = label;
+      this._focusProp = best || null;
       this.onFocus?.(label);
     }
+  }
+
+  // Eases the camera onto the terrain rather than snapping it. Snapping to the exact
+  // ground height every frame turns small bumps into visible jitter.
+  _settleEyeHeight(dt) {
+    const target = heightAt(this.camera.position.x, this.camera.position.z, this._seed) + EYE_HEIGHT;
+    this.camera.position.y += (target - this.camera.position.y) * Math.min(dt * 12, 1);
   }
 
   _animate() {
@@ -687,7 +740,7 @@ export class Scene3D {
       const limit = GROUND_HALF_EXTENT - 0.5;
       this.camera.position.x = THREE.MathUtils.clamp(this.camera.position.x, -limit, limit);
       this.camera.position.z = THREE.MathUtils.clamp(this.camera.position.z, -limit, limit);
-      this.camera.position.y = EYE_HEIGHT;
+      this._settleEyeHeight(dt);
     }
 
     const t = performance.now() / 1000;
@@ -704,6 +757,8 @@ export class Scene3D {
         const u = p.t < 0.5 ? 2 * p.t * p.t : 1 - (-2 * p.t + 2) ** 2 / 2;
         p.group.position.x = THREE.MathUtils.lerp(p.from.x, p.to.x, u);
         p.group.position.z = THREE.MathUtils.lerp(p.from.z, p.to.z, u);
+        // follow the terrain while sliding, or the prop skims through hillsides
+        p.group.position.y = heightAt(p.group.position.x, p.group.position.z, this._seed);
         if (p.t >= 1) settled = true;
       }
     }

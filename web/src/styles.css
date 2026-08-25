@@ -69,10 +69,12 @@ button:disabled { opacity: 0.6; cursor: default; }
 .scene-container { position: absolute; inset: 0; }
 .scene-container canvas { display: block; }
 
+/* Top-left is the status panel now, and the bottom edge moves with the choice panel,
+   so controls sit top-right where nothing else competes. */
 .hint {
   position: absolute;
   top: 12px;
-  left: 12px;
+  right: 12px;
   background: rgba(10, 10, 14, 0.6);
   padding: 6px 12px;
   border-radius: 6px;
@@ -178,7 +180,51 @@ button:disabled { opacity: 0.6; cursor: default; }
   color: #f4f1e8;
   white-space: nowrap;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+.focus-key {
+  border: 1px solid #6a6a76;
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 0.7rem;
+  color: #d8b23c;
+}
+
+/* Tracked story state, top-left. Progression the player can actually see. */
+.status-panel {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  background: rgba(10, 10, 14, 0.62);
+  border: 1px solid rgba(58, 58, 68, 0.8);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  max-width: 260px;
+  pointer-events: none;
+}
+.status-scene {
+  color: #b8b3a4;
+  text-transform: capitalize;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  white-space: nowrap;
+}
+.status-turn { color: #6f6a5e; }
+.status-stats {
+  margin: 8px 0 0;
+  padding: 8px 0 0;
+  border-top: 1px solid rgba(58, 58, 68, 0.8);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.status-row { display: flex; justify-content: space-between; gap: 12px; }
+.status-row dt { color: #8f8a7c; }
+.status-row dd { margin: 0; color: #f4f1e8; text-align: right; }
 
 /* Shown while the avatar acts out the chosen action. */
 .speech-bubble {
@@ -199,7 +245,7 @@ button:disabled { opacity: 0.6; cursor: default; }
 
 .skip-button {
   position: absolute;
-  top: 12px;
+  top: 44px;
   right: 12px;
   background: rgba(26, 26, 31, 0.9);
   color: #f4f1e8;

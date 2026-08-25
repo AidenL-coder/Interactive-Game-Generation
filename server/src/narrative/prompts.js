@@ -87,7 +87,14 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
       "plane's half-extent), spaced so the player can walk between them\n" +
       "- every prop needs a stable `id` (e.g. 'altar_01') and a short `label`\n" +
       "- choices: 2-4 concrete, distinct actions the player can take next\n" +
-      "- narrative: 2-4 short second-person paragraphs describing the current beat" +
+      "- narrative: 2-4 short second-person paragraphs describing the current beat\n" +
+      // Displayed to the player as a status panel. Without visible, changing stakes a
+      // choice has no felt consequence, however good the prose is.
+      "- state_updates: track 2-4 concrete, player-visible stats appropriate to this " +
+      "story (e.g. health, resolve, suspicion, coin, an inventory array, a key " +
+      "relationship). Use short snake_case names, keep the SAME names every turn, and " +
+      "change their values as a consequence of what the player just did — these are " +
+      "shown on screen as the player's status" +
       (trackPreferences
         ? "\n- state_updates.inferred_preferences: REQUIRED every turn (see above) — an object of " +
           "short preference-name -> 0-1 weight pairs, e.g. {\"combat\": 0.7, \"dialogue\": 0.3}. Do not " +

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Scene3D } from "./scene/SceneRenderer.js";
 import StartScreen from "./ui/StartScreen.jsx";
 import ChoicePanel from "./ui/ChoicePanel.jsx";
+import StatusPanel from "./ui/StatusPanel.jsx";
 import { startSession, sendChoice } from "./api.js";
 
 export default function App() {
@@ -66,6 +67,21 @@ export default function App() {
     };
   }, [phase]);
 
+  // Pressing E on a prop feeds it back as a normal turn, so exploring the world is a
+  // way of making choices rather than a separate activity from them. Re-bound whenever
+  // handleChoose changes identity so it never captures a stale session.
+  useEffect(() => {
+    const scene3d = sceneRef.current;
+    if (!scene3d) return undefined;
+    scene3d.onInteract = (prop) => {
+      if (busy || playing) return;
+      handleChoose({ freeText: `Examine and interact with the ${prop.label || prop.type}.` });
+    };
+    return () => {
+      scene3d.onInteract = null;
+    };
+  }, [phase, busy, playing, session?.sessionId]);
+
   async function handleStart(payload) {
     setBusy(true);
     setError(null);
@@ -101,12 +117,19 @@ export default function App() {
   return (
     <div className="game-root">
       <div className="scene-container" ref={containerRef} />
-      <div className="hint">Click to look around · WASD to move · Esc to release</div>
+      <div className="hint">Click to look · WASD move · E interact · Esc release</div>
+
+      <StatusPanel worldState={session?.worldState} turnIndex={session?.turnIndex} />
 
       {!playing && (
         <>
           <div className="crosshair" />
-          {focusLabel && <div className="focus-label">{focusLabel}</div>}
+          {focusLabel && (
+            <div className="focus-label">
+              {focusLabel}
+              <span className="focus-key">E</span>
+            </div>
+          )}
         </>
       )}
 

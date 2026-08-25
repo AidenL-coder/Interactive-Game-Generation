@@ -77,6 +77,18 @@ function repairAgentActions(turn, knownIds) {
   return { turn: { ...turn, agent_actions: kept }, repaired };
 }
 
+// The schema advertises state_updates as "merged into the running world state", but
+// nothing merged it: each turn simply replaced the last, so any stat the model didn't
+// restate that turn silently vanished from the player's status panel. Carry it forward.
+//
+// This applies in both memory conditions on purpose. Game state (health, coin) is not
+// narrative memory — holding it constant across conditions is what isolates the
+// `evolving` variable to story continuity, which is what it's meant to measure.
+function mergeState(previous, incoming) {
+  if (!previous && !incoming) return undefined;
+  return { ...(previous || {}), ...(incoming || {}) };
+}
+
 function propIdsAfter(turn, currentProps) {
   if (turn.scene?.props) return turn.scene.props.map((p) => p.id);
   const ids = new Set(currentProps.map((p) => p.id));
@@ -214,6 +226,10 @@ export async function generateScene({
       worldState = usingDelta
         ? materializeDeltaTurn(candidate, lastWorldState)
         : candidate;
+      worldState.state_updates = mergeState(
+        lastWorldState?.state_updates,
+        worldState.state_updates
+      );
       break;
     }
     lastViolations = check.violations;
