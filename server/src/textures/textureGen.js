@@ -29,6 +29,7 @@ function cacheKey(biome, mood, timeOfDay, kind, propType) {
   // regardless of the weather. 11 prop types => 11 generations, ever. Keying them by
   // scene context instead would multiply that by ~200 for no visible benefit.
   if (kind === "prop") return `prop_${propType}.img`;
+  if (kind === "sprite") return `sprite_${propType}.img`;
   return `${kind}_${biome}_${mood}_${timeOfDay}.img`;
 }
 
@@ -48,6 +49,38 @@ const PROP_MATERIAL_PROMPTS = {
   altar: "carved weathered limestone with faint ancient runes",
   crate: "rough wooden planks with iron nail heads",
 };
+
+// Object sprites, as opposed to material textures. These are billboarded in the scene,
+// so we need the object itself cleanly separated from its background. The model won't
+// reliably emit alpha (it returns JPEG), so we ask for a flat chroma-key backdrop and
+// cut it out client-side. Magenta because effectively nothing in these subjects is
+// naturally that colour.
+export const CHROMA_KEY = { r: 255, g: 0, b: 255 };
+
+const SPRITE_SUBJECT_PROMPTS = {
+  tree: "a single full tree with a thick trunk and dense leafy canopy",
+  npc: "a single standing cloaked human figure, front view, full body, neutral pose",
+  item: "a single ornate treasure chest, closed, three-quarter view",
+  altar: "a single carved stone altar pedestal with worn engravings",
+  crate: "a single wooden supply crate with iron banding",
+  torch: "a single wooden torch on a stand with a burning flame",
+  rock: "a single large mossy boulder",
+};
+
+export function hasSpriteFor(propType) {
+  return Boolean(SPRITE_SUBJECT_PROMPTS[propType]);
+}
+
+function spritePrompt(propType) {
+  const subject = SPRITE_SUBJECT_PROMPTS[propType] || "a single weathered stone object";
+  return (
+    `${subject}, painted fantasy game art, rich detail, soft even lighting. ` +
+    "The object is centered, complete, and fully visible, viewed from ground level at " +
+    "eye height. Isolated on a SOLID PURE MAGENTA (#FF00FF) background — the background " +
+    "must be uniform magenta with no gradient, no shadow, no ground, no scenery, no " +
+    "text. The object itself must contain no magenta or pink."
+  );
+}
 
 function propPrompt(propType) {
   const material = PROP_MATERIAL_PROMPTS[propType] || "rough grey stone surface";
@@ -121,7 +154,9 @@ export async function getTexture({ biome, mood, timeOfDay, kind = "ground", prop
         ? skyPrompt(biome, mood, timeOfDay)
         : kind === "prop"
           ? propPrompt(propType)
-          : groundPrompt(biome, mood, timeOfDay);
+          : kind === "sprite"
+            ? spritePrompt(propType)
+            : groundPrompt(biome, mood, timeOfDay);
 
     const startedAt = Date.now();
     const interaction = await ai.interactions.create({ model: MODEL, input: prompt });

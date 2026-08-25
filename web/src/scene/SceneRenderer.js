@@ -9,6 +9,7 @@ import {
   moodTintColor,
 } from "./proceduralTexture.js";
 import { applyPropTexture } from "./propTextures.js";
+import { attachSprite, SPRITE_TYPES } from "./propSprites.js";
 
 const EYE_HEIGHT = 1.7;
 const MOVE_SPEED = 6; // units/sec
@@ -26,29 +27,9 @@ const PROP_TWEEN_DURATION = 0.6;
 const COLLISION_RADIUS = 0.9;
 const PASSABLE_PROPS = new Set(["water", "item"]);
 
-function labelSprite(text) {
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-  const pad = 16;
-  ctx.font = "28px sans-serif";
-  const width = Math.min(400, ctx.measureText(text).width + pad * 2);
-  canvas.width = width;
-  canvas.height = 44;
-  ctx.font = "28px sans-serif";
-  ctx.fillStyle = "rgba(10,10,14,0.72)";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = "#f4f1e8";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, pad, canvas.height / 2, canvas.width - pad * 2);
-
-  const tex = new THREE.CanvasTexture(canvas);
-  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
-  const sprite = new THREE.Sprite(mat);
-  const scale = canvas.width / canvas.height;
-  sprite.scale.set(scale * 0.5, 0.5, 1);
-  sprite.renderOrder = 999;
-  return sprite;
-}
+// How generous the "what am I looking at" test is, for the on-demand prop label.
+const FOCUS_MAX_DISTANCE = 9;
+const FOCUS_MIN_ALIGNMENT = 0.9; // ~25° cone around the view direction
 
 /** Builds a THREE.Group for a single prop entry from the model's scene.props array. */
 function buildProp(prop, mood) {
@@ -186,7 +167,8 @@ function buildProp(prop, mood) {
       halo.position.y = 0.05;
       halo.userData.noTexture = true;
       group.add(gem, halo);
-      group.userData.bob = true;
+      // Deliberately no bob: items render as real objects (a chest, a relic) that rest
+      // on the ground. Hovering is what made them read as floating dots.
       break;
     }
     case "altar": {
@@ -213,11 +195,9 @@ function buildProp(prop, mood) {
   group.scale.setScalar(scale);
   group.position.set(prop.x || 0, 0, prop.z || 0);
 
-  if (prop.label) {
-    const sprite = labelSprite(prop.label);
-    sprite.position.set(0, 2.2 * scale, 0);
-    group.add(sprite);
-  }
+  // Labels used to hang over every prop as floating text, which read as debug overlay
+  // and cluttered the view. The label now surfaces only for whatever the player is
+  // actually looking at (see _updateFocus), so it's information on demand.
 
   group.traverse((obj) => {
     if (obj.isMesh) {
@@ -226,9 +206,11 @@ function buildProp(prop, mood) {
     }
   });
 
-  // Generated material texture arrives asynchronously and is applied in place; if
-  // generation is unavailable the prop simply keeps its flat colour.
-  applyPropTexture(group, prop.type);
+  // Discrete objects become billboarded artwork; architectural pieces keep their
+  // geometry and just get a material texture. Both arrive asynchronously, so the prop
+  // renders immediately either way and upgrades in place when the image lands.
+  if (SPRITE_TYPES.has(prop.type)) attachSprite(group, prop.type);
+  else applyPropTexture(group, prop.type);
 
   return group;
 }
@@ -290,6 +272,8 @@ export class Scene3D {
     this.propsById = new Map();
     this.playback = null;
     this.onSay = null; // set by the UI to surface `say` action text
+    this.onFocus = null; // set by the UI to surface the looked-at prop's label
+    this._focusLabel = null;
     this._lightsUsed = 0;
     this._mood = "serene";
   }
@@ -639,8 +623,45 @@ export class Scene3D {
     return false;
   }
 
+  // Reports the nearest prop the player is roughly facing and standing near, so its
+  // label can be shown on demand instead of every prop shouting its name at all times.
+  _updateFocus() {
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+    const camPos = this.camera.position;
+
+    let best = null;
+    let bestScore = -Infinity;
+    for (const { prop } of this.propsById.values()) {
+      if (!prop.label) continue;
+      const dx = prop.x - camPos.x;
+      const dz = prop.z - camPos.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist > FOCUS_MAX_DISTANCE) continue;
+
+      // dot product of the flattened view direction against the direction to the prop:
+      // 1 is dead ahead, 0 is off to the side.
+      const alignment = (dx / dist) * forward.x + (dz / dist) * forward.z;
+      if (alignment < FOCUS_MIN_ALIGNMENT) continue;
+
+      // Prefer things both centred in view and close by.
+      const score = alignment - dist * 0.02;
+      if (score > bestScore) {
+        bestScore = score;
+        best = prop;
+      }
+    }
+
+    const label = best?.label ?? null;
+    if (label !== this._focusLabel) {
+      this._focusLabel = label;
+      this.onFocus?.(label);
+    }
+  }
+
   _animate() {
     const dt = Math.min(this.clock.getDelta(), 0.1);
+    if (!this.playback) this._updateFocus();
 
     if (this.playback) {
       this._stepPlayback(dt);

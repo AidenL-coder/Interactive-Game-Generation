@@ -6,7 +6,7 @@ import { createSession, getSession, updateSession } from "./state/sessionStore.j
 import { generateScene } from "./narrative/generateScene.js";
 import { firstTurnMessage, choiceTurnMessage } from "./narrative/prompts.js";
 import { logGeneration } from "./logging/logger.js";
-import { getTexture, textureGenEnabled } from "./textures/textureGen.js";
+import { getTexture, textureGenEnabled, hasSpriteFor } from "./textures/textureGen.js";
 import { BIOMES, MOODS, TIMES_OF_DAY, PROP_TYPES } from "iwg-shared";
 
 const app = express();
@@ -35,10 +35,14 @@ app.get("/api/texture", async (req, res) => {
   // Validate against the shared enums rather than interpolating raw query strings into
   // a model prompt — this endpoint is unauthenticated and otherwise lets a caller drive
   // arbitrary text into a paid image API.
-  if (!["ground", "sky", "prop"].includes(kind)) {
-    return res.status(400).json({ error: "kind must be 'ground', 'sky', or 'prop'" });
+  if (!["ground", "sky", "prop", "sprite"].includes(kind)) {
+    return res.status(400).json({ error: "kind must be 'ground', 'sky', 'prop', or 'sprite'" });
   }
-  if (kind === "prop") {
+  if (kind === "sprite") {
+    if (!hasSpriteFor(propType)) {
+      return res.status(404).json({ error: "no sprite defined for that prop type" });
+    }
+  } else if (kind === "prop") {
     // Prop materials depend only on the prop type, not on scene context.
     if (!PROP_TYPES.includes(propType)) {
       return res.status(400).json({ error: "type must be a valid prop type" });

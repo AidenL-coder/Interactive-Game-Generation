@@ -152,6 +152,34 @@ button:disabled { opacity: 0.6; cursor: default; }
 
 .generating-hint { margin: 0; font-size: 0.85rem; color: #b8b3a4; }
 
+/* Replaces the floating name tags that used to hang over every prop: a small crosshair
+   plus a label for whatever the player is actually looking at. */
+.crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: rgba(244, 241, 232, 0.5);
+  box-shadow: 0 0 0 1px rgba(10, 10, 14, 0.4);
+  pointer-events: none;
+}
+.focus-label {
+  position: absolute;
+  top: calc(50% + 18px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 10, 14, 0.7);
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #f4f1e8;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Shown while the avatar acts out the chosen action. */
 .speech-bubble {
   position: absolute;

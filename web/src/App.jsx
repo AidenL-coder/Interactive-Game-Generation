@@ -12,6 +12,7 @@ export default function App() {
 
   const [playing, setPlaying] = useState(false); // avatar is acting out the last choice
   const [speech, setSpeech] = useState(null);
+  const [focusLabel, setFocusLabel] = useState(null);
 
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
@@ -53,13 +54,15 @@ export default function App() {
     }
   }, [session?.worldState]);
 
-  // Surface `say` actions as on-screen speech while the avatar acts.
+  // Surface `say` actions as on-screen speech, and the looked-at prop's label.
   useEffect(() => {
     const scene3d = sceneRef.current;
     if (!scene3d) return undefined;
     scene3d.onSay = setSpeech;
+    scene3d.onFocus = setFocusLabel;
     return () => {
       scene3d.onSay = null;
+      scene3d.onFocus = null;
     };
   }, [phase]);
 
@@ -99,6 +102,13 @@ export default function App() {
     <div className="game-root">
       <div className="scene-container" ref={containerRef} />
       <div className="hint">Click to look around · WASD to move · Esc to release</div>
+
+      {!playing && (
+        <>
+          <div className="crosshair" />
+          {focusLabel && <div className="focus-label">{focusLabel}</div>}
+        </>
+      )}
 
       {speech && <div className="speech-bubble">{speech}</div>}
 
