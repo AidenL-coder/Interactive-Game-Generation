@@ -117,7 +117,9 @@ export default function App() {
   return (
     <div className="game-root">
       <div className="scene-container" ref={containerRef} />
-      <div className="hint">Click to look · WASD move · E interact · Esc release</div>
+      <div className="hint">Click to look · WASD move · Shift run · E interact · Esc release</div>
+
+      {busy && <div className="turn-progress" />}
 
       <StatusPanel worldState={session?.worldState} turnIndex={session?.turnIndex} />
 

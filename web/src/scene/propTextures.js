@@ -70,9 +70,11 @@ export async function applyPropTexture(group, type) {
     const mat = obj.material;
     if (!mat || Array.isArray(mat)) return;
     mat.map = tex;
-    // Full-strength tint over a photographic texture reads as muddy; lift toward white
-    // so the texture's own colour dominates while keeping a hint of the mood tint.
-    mat.color?.lerp(new THREE.Color(0xffffff), 0.55);
+    // Full-strength tint over a photographic texture reads as muddy, but lifting too
+    // far toward white blew out pale textures into featureless shapes — a marble pillar
+    // rendered as a plain white cylinder. Keep enough of the base colour that the
+    // texture's own contrast survives.
+    mat.color?.lerp(new THREE.Color(0xffffff), 0.3);
     mat.needsUpdate = true;
   });
 }

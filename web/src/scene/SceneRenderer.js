@@ -7,6 +7,8 @@ import {
   ambientIntensity,
   sunIntensity,
   moodTintColor,
+  sunSetup,
+  fogRange,
 } from "./proceduralTexture.js";
 import { applyPropTexture } from "./propTextures.js";
 import { attachSprite, SPRITE_TYPES } from "./propSprites.js";
@@ -15,6 +17,7 @@ import { heightAt, seedFromScene } from "./terrain.js";
 
 const EYE_HEIGHT = 1.7;
 const MOVE_SPEED = 6; // units/sec
+const SPRINT_MULTIPLIER = 1.85; // hold shift; a 40-unit world is tedious at walking pace
 const MAX_POINT_LIGHTS = 4; // cap live lights (torches) for perf
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -37,7 +40,62 @@ const FOCUS_MIN_ALIGNMENT = 0.9; // ~25° cone around the view direction
 // rather than ending in a visible edge.
 const HORIZON_MARGIN = 60;
 
+// Opening-shot framing: how many vantage points to test around the scene's centre, and
+// how far back to stand from it.
+const VANTAGE_SAMPLES = 24;
+const VANTAGE_DISTANCE = 13;
+
 /** Builds a THREE.Group for a single prop entry from the model's scene.props array. */
+// Chooses where the player opens the scene. A fixed spawn regularly put a wall or a
+// building directly between the camera and everything worth looking at. This samples
+// vantage points around the props' centre and picks the one with the clearest line of
+// sight, so a turn opens on a readable composition rather than the back of a hut.
+function chooseVantage(props) {
+  const fallback = { x: 0, z: GROUND_HALF_EXTENT * 0.6 };
+  if (!props?.length) return { position: fallback, target: { x: 0, z: 0 } };
+
+  const target = {
+    x: props.reduce((s, p) => s + p.x, 0) / props.length,
+    z: props.reduce((s, p) => s + p.z, 0) / props.length,
+  };
+
+  const limit = GROUND_HALF_EXTENT - 2;
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (let i = 0; i < VANTAGE_SAMPLES; i++) {
+    const angle = (i / VANTAGE_SAMPLES) * Math.PI * 2;
+    const x = THREE.MathUtils.clamp(target.x + Math.cos(angle) * VANTAGE_DISTANCE, -limit, limit);
+    const z = THREE.MathUtils.clamp(target.z + Math.sin(angle) * VANTAGE_DISTANCE, -limit, limit);
+
+    const dx = target.x - x;
+    const dz = target.z - z;
+    const len = Math.hypot(dx, dz) || 1;
+    const ux = dx / len;
+    const uz = dz / len;
+
+    let score = 0;
+    for (const p of props) {
+      const px = p.x - x;
+      const pz = p.z - z;
+      const along = px * ux + pz * uz; // distance along the view direction
+      if (along < 0 || along > len) continue; // behind us, or past the subject
+      const perp = Math.abs(px * uz - pz * ux); // sideways offset from the sight line
+      // Anything close to the sight line and close to the camera is an obstruction;
+      // the same object far away is just part of the scene.
+      if (perp < 2.5) score -= (len - along) / len;
+      // A little standing room matters too.
+      if (along < 3 && perp < 2) score -= 2;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = { x, z };
+    }
+  }
+
+  return { position: best || fallback, target };
+}
+
 function buildProp(prop, mood) {
   const group = new THREE.Group();
   const tint = moodTintColor(mood);
@@ -277,6 +335,18 @@ export class Scene3D {
     this.sun = new THREE.DirectionalLight(0xffffff, 1);
     this.sun.position.set(10, 20, 10);
     this.sun.castShadow = true;
+    // The default shadow frustum is a 10-unit box — in a 40-unit world that leaves
+    // most of the scene unshadowed with a visible cut-off line across the ground.
+    this.sun.shadow.mapSize.set(2048, 2048);
+    const shadowCam = this.sun.shadow.camera;
+    shadowCam.left = -GROUND_HALF_EXTENT * 1.3;
+    shadowCam.right = GROUND_HALF_EXTENT * 1.3;
+    shadowCam.top = GROUND_HALF_EXTENT * 1.3;
+    shadowCam.bottom = -GROUND_HALF_EXTENT * 1.3;
+    shadowCam.near = 0.5;
+    shadowCam.far = 120;
+    shadowCam.updateProjectionMatrix();
+    this.sun.shadow.bias = -0.0006; // kills shadow acne on the displaced terrain
     this.scene.add(this.ambient, this.sun);
 
     this.worldGroup = new THREE.Group();
@@ -293,6 +363,7 @@ export class Scene3D {
     this._focusLabel = null;
     this._focusProp = null;
     this._seed = 1;
+    this._bobPhase = 0;
     this._lightsUsed = 0;
     this._mood = "serene";
   }
@@ -332,6 +403,8 @@ export class Scene3D {
     this._sceneToken++;
 
     this._seed = seedFromScene(scene);
+    // Picked before the scatter is built so clutter can be kept off the spawn point.
+    const vantage = chooseVantage(scene.props);
 
     // A flat plane is the single most "unfinished" thing in a 3D scene. Displacing the
     // ground costs nothing at runtime and everything else (props, scatter, the player's
@@ -361,7 +434,7 @@ export class Scene3D {
     // Hundreds of instanced biome details plus a horizon ring, so the world reads as a
     // place instead of a few objects on a lawn. Purely decorative and deterministic —
     // deliberately not part of WorldState, so it can't affect spatial-consistency metrics.
-    this.worldGroup.add(buildScatter(scene, this._seed));
+    this.worldGroup.add(buildScatter(scene, this._seed, vantage.position));
 
     // The procedural texture above renders immediately; a generated one (if the server
     // has an image-gen key) can take seconds, so it's fetched in the background and
@@ -372,17 +445,32 @@ export class Scene3D {
     this._mood = scene.mood;
     for (const prop of scene.props || []) this._addProp(prop, scene.mood);
 
-    this.scene.background = skyColor(scene.mood, scene.time_of_day);
-    this.scene.fog.color = this.scene.background;
-    this.ambient.intensity = ambientIntensity(scene.time_of_day);
+    const sky = skyColor(scene.mood, scene.time_of_day);
+    this.scene.background = sky;
+    this.scene.fog.color = sky.clone();
+    const [fogNear, fogFar] = fogRange(scene.mood, scene.time_of_day);
+    this.scene.fog.near = fogNear;
+    this.scene.fog.far = fogFar;
+
+    // Sun angle and colour do most of the work of communicating time of day; a fixed
+    // overhead light made dawn, dusk and night differ only by sky tint.
+    const sun = sunSetup(scene.time_of_day);
+    this.sun.position.set(...sun.position);
+    this.sun.color.set(sun.color);
     this.sun.intensity = sunIntensity(scene.time_of_day);
+    this.ambient.color.set(sun.ambient);
+    this.ambient.intensity = ambientIntensity(scene.time_of_day);
     this._loadGeneratedSky(scene);
 
-    // reset the player to a sensible spot each new scene rather than leaving them
-    // possibly stranded outside the new ground extent
-    const spawnZ = GROUND_HALF_EXTENT * 0.6;
-    this.camera.position.set(0, heightAt(0, spawnZ, this._seed) + EYE_HEIGHT, spawnZ);
-    this.camera.lookAt(0, this.camera.position.y, 0); // face the middle of the world
+    // Open on a vantage with a clear view of the scene, rather than a fixed point that
+    // might be staring at a wall.
+    const { position, target } = vantage;
+    this.camera.position.set(
+      position.x,
+      heightAt(position.x, position.z, this._seed) + EYE_HEIGHT,
+      position.z
+    );
+    this.camera.lookAt(target.x, this.camera.position.y, target.z);
   }
 
   _addProp(prop, mood) {
@@ -706,9 +794,13 @@ export class Scene3D {
   }
 
   // Eases the camera onto the terrain rather than snapping it. Snapping to the exact
-  // ground height every frame turns small bumps into visible jitter.
-  _settleEyeHeight(dt) {
-    const target = heightAt(this.camera.position.x, this.camera.position.z, this._seed) + EYE_HEIGHT;
+  // ground height every frame turns small bumps into visible jitter. A small walking
+  // bob rides on top: without it, moving feels like sliding a camera on rails.
+  _settleEyeHeight(dt, moving, speedScale = 1) {
+    this._bobPhase = moving ? this._bobPhase + dt * 9 * speedScale : 0;
+    const bob = moving ? Math.sin(this._bobPhase) * 0.045 * speedScale : 0;
+    const ground = heightAt(this.camera.position.x, this.camera.position.z, this._seed);
+    const target = ground + EYE_HEIGHT + bob;
     this.camera.position.y += (target - this.camera.position.y) * Math.min(dt * 12, 1);
   }
 
@@ -722,11 +814,14 @@ export class Scene3D {
       const dir = new THREE.Vector3();
       const forward = (this.keys.has("KeyW") ? 1 : 0) - (this.keys.has("KeyS") ? 1 : 0);
       const strafe = (this.keys.has("KeyD") ? 1 : 0) - (this.keys.has("KeyA") ? 1 : 0);
-      if (forward || strafe) {
+      const sprinting = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+      const speed = MOVE_SPEED * (sprinting ? SPRINT_MULTIPLIER : 1);
+      const moving = Boolean(forward || strafe);
+      if (moving) {
         const before = this.camera.position.clone();
         dir.set(strafe, 0, -forward).normalize();
-        this.controls.moveRight(dir.x * MOVE_SPEED * dt);
-        this.controls.moveForward(-dir.z * MOVE_SPEED * dt);
+        this.controls.moveRight(dir.x * speed * dt);
+        this.controls.moveForward(-dir.z * speed * dt);
 
         // resolve each axis separately so hitting a wall slides along it rather than
         // sticking the player in place
@@ -740,7 +835,7 @@ export class Scene3D {
       const limit = GROUND_HALF_EXTENT - 0.5;
       this.camera.position.x = THREE.MathUtils.clamp(this.camera.position.x, -limit, limit);
       this.camera.position.z = THREE.MathUtils.clamp(this.camera.position.z, -limit, limit);
-      this._settleEyeHeight(dt);
+      this._settleEyeHeight(dt, moving, sprinting ? SPRINT_MULTIPLIER : 1);
     }
 
     const t = performance.now() / 1000;

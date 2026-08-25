@@ -39,7 +39,9 @@ function cacheKey(biome, mood, timeOfDay, kind, propType) {
 const PROP_MATERIAL_PROMPTS = {
   tree: "rough brown tree bark with deep vertical grooves",
   rock: "rough grey granite stone surface with mineral speckles",
-  pillar: "polished cream marble with subtle grey veining",
+  // Pale cream marble rendered as a featureless white cylinder under bright sun; a
+  // darker, higher-contrast stone actually reads as carved masonry.
+  pillar: "weathered grey-brown carved stone column surface with deep vertical fluting and dark veining",
   wall: "old stone masonry blocks with visible mortar joints",
   structure: "weathered sandstone block wall, slightly mossy",
   water: "clear rippling water surface, gentle caustics",
@@ -122,10 +124,16 @@ function groundPrompt(biome, mood, timeOfDay) {
 }
 
 function skyPrompt(biome, mood, timeOfDay) {
+  // Sky ONLY. An earlier version asked for a "horizon backdrop above {biome} terrain"
+  // and got cliffs and rocks — which, wrapped equirectangularly onto the scene
+  // background, appeared as dark landmasses hanging directly overhead.
   return (
-    `A wide panoramic sky and distant horizon backdrop above ${biome} terrain. ` +
-    `Mood: ${mood}. Time of day: ${timeOfDay}. ` +
-    "Painted game skybox backdrop, no foreground objects, no text, no people."
+    `A ${timeOfDay} sky, ${mood} in feeling, seen looking straight up and around: ` +
+    "clouds and open sky filling the entire frame. " +
+    "ABSOLUTELY NO ground, NO terrain, NO horizon line, NO mountains, NO trees, " +
+    "NO buildings, NO birds, NO text — nothing but sky and cloud. " +
+    "Seamless 360-degree equirectangular panorama, wide 2:1 aspect ratio, " +
+    "painterly digital matte painting."
   );
 }
 

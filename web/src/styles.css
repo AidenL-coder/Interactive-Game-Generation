@@ -152,7 +152,51 @@ button:disabled { opacity: 0.6; cursor: default; }
   font: inherit;
 }
 
-.generating-hint { margin: 0; font-size: 0.85rem; color: #b8b3a4; }
+.generating-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #b8b3a4;
+}
+.generating-hint::after {
+  content: "";
+  animation: ellipsis 1.4s steps(4, end) infinite;
+}
+@keyframes ellipsis {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
+}
+
+/* A turn takes ~10s of model time. An indeterminate bar at the very top says "working"
+   without pretending to know how far along it is. */
+.turn-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  background: rgba(216, 178, 60, 0.15);
+  z-index: 5;
+}
+.turn-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 35%;
+  background: linear-gradient(90deg, transparent, #d8b23c, transparent);
+  animation: sweep 1.5s ease-in-out infinite;
+}
+@keyframes sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(385%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-progress::after,
+  .generating-hint::after { animation: none; }
+}
 
 /* Replaces the floating name tags that used to hang over every prop: a small crosshair
    plus a label for whatever the player is actually looking at. */

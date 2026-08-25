@@ -10,7 +10,9 @@ export const SPRITE_TYPES = new Set(["tree", "npc", "item", "altar", "crate", "t
 
 // World height in units for each sprite, so a chest doesn't render as tall as a tree.
 const SPRITE_HEIGHT = {
-  tree: 4.2,
+  // Trees at 4.2 dominated the frame from a 1.7-unit eye height; 3.4 still reads as a
+  // mature tree without three of them swallowing the whole view.
+  tree: 3.4,
   npc: 1.85,
   item: 0.9,
   altar: 1.3,
@@ -25,8 +27,11 @@ const cache = new Map();
 // magenta backdrop it was asked for. JPEG compression smears colour at edges, hence a
 // generous distance threshold plus a softened rim rather than a hard binary cut.
 const KEY = { r: 255, g: 0, b: 255 };
-const KEY_DISTANCE = 130;
-const EDGE_SOFTNESS = 60;
+const KEY_DISTANCE = 165;
+const EDGE_SOFTNESS = 85;
+// Below this, a red+blue-over-green cast is just a warm or purple object colour rather
+// than backdrop bleed, so leave it alone.
+const DESPILL_THRESHOLD = 22;
 
 function chromaKeyToCanvas(bitmap) {
   const canvas = document.createElement("canvas");
@@ -38,23 +43,33 @@ function chromaKeyToCanvas(bitmap) {
   const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
-    const dr = d[i] - KEY.r;
-    const dg = d[i + 1] - KEY.g;
-    const db = d[i + 2] - KEY.b;
+    const r = d[i];
+    const g = d[i + 1];
+    const b = d[i + 2];
+
+    const dr = r - KEY.r;
+    const dg = g - KEY.g;
+    const db = b - KEY.b;
     const dist = Math.sqrt(dr * dr + dg * dg + db * db);
 
     if (dist < KEY_DISTANCE) {
       d[i + 3] = 0;
-    } else if (dist < KEY_DISTANCE + EDGE_SOFTNESS) {
-      // Fade the rim so compression fringing doesn't leave a hard magenta halo.
+      continue;
+    }
+    if (dist < KEY_DISTANCE + EDGE_SOFTNESS) {
+      // Fade the rim so compression fringing doesn't leave a hard halo.
       d[i + 3] = Math.round(((dist - KEY_DISTANCE) / EDGE_SOFTNESS) * 255);
-      // Pull residual magenta out of semi-transparent edge pixels: where red and blue
-      // both overshoot green, the excess is backdrop bleed rather than object colour.
-      const g = d[i + 1];
-      if (d[i] > g && d[i + 2] > g) {
-        d[i] = Math.round((d[i] + g) / 2);
-        d[i + 2] = Math.round((d[i + 2] + g) / 2);
-      }
+    }
+
+    // Despill every surviving pixel, not just the soft rim. Restricting it to the rim
+    // left a bright magenta outline glowing around every sprite: JPEG smears backdrop
+    // colour several pixels deep into the object, well past the alpha transition.
+    const avgRB = (r + b) / 2;
+    const excess = avgRB - g;
+    if (excess > DESPILL_THRESHOLD) {
+      const cut = (excess - DESPILL_THRESHOLD) * 0.9;
+      d[i] = Math.max(g, r - cut);
+      d[i + 2] = Math.max(g, b - cut);
     }
   }
   ctx.putImageData(img, 0, 0);
@@ -112,6 +127,44 @@ export function propSprite(type) {
   return job;
 }
 
+// THREE.Sprite cannot cast a shadow, so sprite props had nothing anchoring them to the
+// ground and read as stickers pasted onto the scene. A soft radial blob under each one
+// is the standard cheap fix and does most of the work a real shadow would.
+let contactShadowTexture = null;
+function getContactShadowTexture() {
+  if (contactShadowTexture) return contactShadowTexture;
+
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  g.addColorStop(0, "rgba(0,0,0,0.55)");
+  g.addColorStop(0.5, "rgba(0,0,0,0.28)");
+  g.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+
+  contactShadowTexture = new THREE.CanvasTexture(canvas);
+  return contactShadowTexture;
+}
+
+function contactShadow(width) {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, width * 0.62),
+    new THREE.MeshBasicMaterial({
+      map: getContactShadowTexture(),
+      transparent: true,
+      depthWrite: false,
+      opacity: 0.85,
+    })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.03; // just above the terrain to avoid z-fighting
+  mesh.renderOrder = -1;
+  return mesh;
+}
+
 /**
  * Swaps a prop's primitive geometry for a billboarded sprite once the artwork loads.
  * The geometry stays until then, so the scene is never empty while waiting — and stays
@@ -139,5 +192,5 @@ export async function attachSprite(group, type) {
   // Hide the placeholder geometry rather than removing it: it still defines the
   // prop's collision footprint and the delta tweens animate the group as a whole.
   for (const child of [...group.children]) child.visible = false;
-  group.add(sprite);
+  group.add(contactShadow(height * loaded.aspect * 0.7), sprite);
 }

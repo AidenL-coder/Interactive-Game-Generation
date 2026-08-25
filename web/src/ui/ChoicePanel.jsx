@@ -61,7 +61,7 @@ export default function ChoicePanel({ worldState, onChoose, busy }) {
         </button>
       </form>
 
-      {busy && <p className="generating-hint">Generating next scene...</p>}
+      {busy && <p className="generating-hint">The world responds</p>}
     </div>
   );
 }

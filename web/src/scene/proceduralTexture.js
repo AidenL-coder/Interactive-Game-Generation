@@ -78,14 +78,49 @@ export function skyColor(mood, timeOfDay) {
   return new THREE.Color(row[mood] || row.serene);
 }
 
+// Raised substantially from the original values: with photographic textures and filmic
+// tone mapping, dusk and night rendered as near-black silhouettes where nothing was
+// readable. Even "dark" scenes need enough fill light to see the world you're walking
+// through — atmosphere comes from colour and contrast, not from an unlit frame.
 export function ambientIntensity(timeOfDay) {
-  return { dawn: 0.55, day: 0.9, dusk: 0.5, night: 0.18 }[timeOfDay] ?? 0.7;
+  return { dawn: 1.0, day: 1.25, dusk: 0.95, night: 0.6 }[timeOfDay] ?? 1.0;
 }
 
 export function sunIntensity(timeOfDay) {
-  return { dawn: 0.6, day: 1.1, dusk: 0.5, night: 0.05 }[timeOfDay] ?? 0.8;
+  return { dawn: 1.4, day: 2.0, dusk: 1.3, night: 0.5 }[timeOfDay] ?? 1.4;
 }
 
 export function moodTintColor(mood) {
   return new THREE.Color(MOOD_TINT[mood] || "#ffffff");
+}
+
+// Sun direction and colour per time of day. A fixed overhead white light made dawn,
+// dusk and night look identical apart from the sky tint, which wasted the strongest
+// atmosphere signal the model gives us. Low-angle warm light also produces long
+// shadows, which is most of what sells time of day.
+const SUN_SETUP = {
+  dawn: { position: [-18, 9, 12], color: "#ffc999", ambient: "#a8bdd0" },
+  day: { position: [12, 24, 10], color: "#fff6e8", ambient: "#c6d3de" },
+  dusk: { position: [18, 8, -10], color: "#ffa968", ambient: "#a99dc0" },
+  night: { position: [-10, 16, -14], color: "#a9bde8", ambient: "#5a6684" },
+};
+
+export function sunSetup(timeOfDay) {
+  return SUN_SETUP[timeOfDay] || SUN_SETUP.day;
+}
+
+// Fog distance also carries mood: an ominous scene closes in, a serene one opens up.
+const MOOD_FOG = {
+  serene: [34, 92],
+  joyful: [38, 98],
+  mysterious: [20, 62],
+  tense: [24, 70],
+  ominous: [16, 54],
+  desolate: [26, 76],
+};
+
+export function fogRange(mood, timeOfDay) {
+  const [near, far] = MOOD_FOG[mood] || MOOD_FOG.serene;
+  // Night pulls the view in further whatever the mood.
+  return timeOfDay === "night" ? [near * 0.7, far * 0.65] : [near, far];
 }
