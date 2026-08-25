@@ -3,5 +3,6 @@ dist/
 .env
 *.local
 server/logs/*.jsonl
+server/.texture-cache/
 eval/out/
 .DS_Store

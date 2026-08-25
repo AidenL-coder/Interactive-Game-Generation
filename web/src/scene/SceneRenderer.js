@@ -12,6 +12,7 @@ import {
 const EYE_HEIGHT = 1.7;
 const MOVE_SPEED = 6; // units/sec
 const MAX_POINT_LIGHTS = 4; // cap live lights (torches) for perf
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
 function labelSprite(text) {
   const canvas = document.createElement("canvas");
@@ -225,6 +226,7 @@ export class Scene3D {
 
     this.groundMesh = null;
     this.dynamicProps = [];
+    this._sceneToken = 0;
   }
 
   _initControls() {
@@ -262,6 +264,11 @@ export class Scene3D {
     ground.receiveShadow = true;
     this.worldGroup.add(ground);
 
+    // The procedural texture above renders immediately; a generated one (if the server
+    // has an image-gen key) can take seconds, so it's fetched in the background and
+    // swapped in on arrival rather than blocking the scene on it.
+    this._loadGeneratedGround(scene, groundMat);
+
     let lightsUsed = 0;
     for (const prop of scene.props || []) {
       const group = buildProp(prop, scene.mood);
@@ -283,6 +290,44 @@ export class Scene3D {
     // reset the player to a sensible spot each new scene rather than leaving them
     // possibly stranded outside the new ground extent
     this.camera.position.set(0, EYE_HEIGHT, GROUND_HALF_EXTENT * 0.6);
+  }
+
+  async _loadGeneratedGround(scene, groundMat) {
+    // Each setScene() bumps the token; a texture request that resolves after the player
+    // has already advanced to the next scene is discarded rather than painted onto the
+    // wrong world (or onto a material that's since been disposed).
+    const token = ++this._sceneToken;
+    const params = new URLSearchParams({
+      biome: scene.biome,
+      mood: scene.mood,
+      time_of_day: scene.time_of_day,
+      kind: "ground",
+    });
+
+    try {
+      const res = await fetch(`${API_BASE}/texture?${params}`);
+      if (!res.ok) return; // 503 = no key configured; keep the procedural texture
+      const blob = await res.blob();
+      if (token !== this._sceneToken) return;
+
+      const bitmap = await createImageBitmap(blob);
+      if (token !== this._sceneToken) {
+        bitmap.close();
+        return;
+      }
+
+      const tex = new THREE.CanvasTexture(bitmap);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(4, 4);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+
+      groundMat.map?.dispose();
+      groundMat.map = tex;
+      groundMat.needsUpdate = true;
+    } catch {
+      // network/decode failure — procedural texture stays, nothing to do
+    }
   }
 
   _animate() {

@@ -6,6 +6,8 @@ import { createSession, getSession, updateSession } from "./state/sessionStore.j
 import { generateScene } from "./narrative/generateScene.js";
 import { firstTurnMessage, choiceTurnMessage } from "./narrative/prompts.js";
 import { logGeneration } from "./logging/logger.js";
+import { getTexture, textureGenEnabled } from "./textures/textureGen.js";
+import { BIOMES, MOODS, TIMES_OF_DAY } from "iwg-shared";
 
 const app = express();
 app.use(cors());
@@ -19,6 +21,37 @@ function publicSession(session) {
     worldState: session.lastWorldState,
   };
 }
+
+// Generated scene textures. Kept server-side because the image-gen key must never
+// reach the browser. A 503 here is a normal, expected mode (no key configured) — the
+// renderer treats it as "use the procedural fallback", not as an error.
+app.get("/api/texture", async (req, res) => {
+  if (!textureGenEnabled) {
+    return res.status(503).json({ error: "texture generation disabled (no API key configured)" });
+  }
+
+  const { biome, mood, time_of_day: timeOfDay, kind = "ground" } = req.query;
+
+  // Validate against the shared enums rather than interpolating raw query strings into
+  // a model prompt — this endpoint is unauthenticated and otherwise lets a caller drive
+  // arbitrary text into a paid image API.
+  if (!BIOMES.includes(biome) || !MOODS.includes(mood) || !TIMES_OF_DAY.includes(timeOfDay)) {
+    return res.status(400).json({ error: "biome, mood, and time_of_day must be valid enum values" });
+  }
+  if (kind !== "ground" && kind !== "sky") {
+    return res.status(400).json({ error: "kind must be 'ground' or 'sky'" });
+  }
+
+  try {
+    const { buffer, contentType } = await getTexture({ biome, mood, timeOfDay, kind });
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "public, max-age=86400");
+    res.send(buffer);
+  } catch (err) {
+    console.error("[GET /api/texture] generation failed:", err);
+    res.status(502).json({ error: "texture generation failed", detail: String(err.message || err) });
+  }
+});
 
 app.post("/api/sessions", async (req, res) => {
   const { profile, sourceText, ablation } = req.body || {};
