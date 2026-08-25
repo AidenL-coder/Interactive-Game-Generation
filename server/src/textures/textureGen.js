@@ -24,8 +24,39 @@ const ai = textureGenEnabled ? new GoogleGenAI({ apiKey }) : null;
 // render stays *deterministic given a WorldState* — which is what docs/research.md
 // relies on for cross-ablation comparability. A fresh sample per turn would reintroduce
 // exactly the rendering noise that design decision exists to eliminate.
-function cacheKey(biome, mood, timeOfDay, kind) {
+function cacheKey(biome, mood, timeOfDay, kind, propType) {
+  // Prop materials are keyed by type alone, not by biome/mood/time: bark is bark
+  // regardless of the weather. 11 prop types => 11 generations, ever. Keying them by
+  // scene context instead would multiply that by ~200 for no visible benefit.
+  if (kind === "prop") return `prop_${propType}.img`;
   return `${kind}_${biome}_${mood}_${timeOfDay}.img`;
+}
+
+// Material description per prop type. These are surface textures tiled onto the
+// geometry, not pictures of the object — asking for "a tree" would return a tree on a
+// background, which looks wrong wrapped around a cone.
+const PROP_MATERIAL_PROMPTS = {
+  tree: "rough brown tree bark with deep vertical grooves",
+  rock: "rough grey granite stone surface with mineral speckles",
+  pillar: "polished cream marble with subtle grey veining",
+  wall: "old stone masonry blocks with visible mortar joints",
+  structure: "weathered sandstone block wall, slightly mossy",
+  water: "clear rippling water surface, gentle caustics",
+  torch: "dark charred wood grain",
+  npc: "coarse woven wool cloth in muted earth tones",
+  item: "polished antique gold metal with fine engraving",
+  altar: "carved weathered limestone with faint ancient runes",
+  crate: "rough wooden planks with iron nail heads",
+};
+
+function propPrompt(propType) {
+  const material = PROP_MATERIAL_PROMPTS[propType] || "rough grey stone surface";
+  return (
+    `A seamless, tileable material texture: ${material}. ` +
+    "Flat lay, evenly lit, photographed straight on, filling the entire frame. " +
+    "No objects, no shadows, no background, no text, no edges or borders. " +
+    "Square 1:1 aspect ratio, edges must tile seamlessly."
+  );
 }
 
 // The model's declared output format isn't guaranteed to match what it actually
@@ -69,10 +100,10 @@ function skyPrompt(biome, mood, timeOfDay) {
  * Returns `{ buffer, contentType }` for a scene texture, generating via Gemini on a
  * cache miss. `kind` is "ground" | "sky".
  */
-export async function getTexture({ biome, mood, timeOfDay, kind = "ground" }) {
+export async function getTexture({ biome, mood, timeOfDay, kind = "ground", propType }) {
   if (!textureGenEnabled) throw new Error("texture generation disabled (no API key)");
 
-  const key = cacheKey(biome, mood, timeOfDay, kind);
+  const key = cacheKey(biome, mood, timeOfDay, kind, propType);
   const cachePath = path.join(CACHE_DIR, key);
 
   try {
@@ -86,7 +117,11 @@ export async function getTexture({ biome, mood, timeOfDay, kind = "ground" }) {
 
   const job = (async () => {
     const prompt =
-      kind === "sky" ? skyPrompt(biome, mood, timeOfDay) : groundPrompt(biome, mood, timeOfDay);
+      kind === "sky"
+        ? skyPrompt(biome, mood, timeOfDay)
+        : kind === "prop"
+          ? propPrompt(propType)
+          : groundPrompt(biome, mood, timeOfDay);
 
     const startedAt = Date.now();
     const interaction = await ai.interactions.create({ model: MODEL, input: prompt });

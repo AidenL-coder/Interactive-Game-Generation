@@ -7,7 +7,7 @@ import { generateScene } from "./narrative/generateScene.js";
 import { firstTurnMessage, choiceTurnMessage } from "./narrative/prompts.js";
 import { logGeneration } from "./logging/logger.js";
 import { getTexture, textureGenEnabled } from "./textures/textureGen.js";
-import { BIOMES, MOODS, TIMES_OF_DAY } from "iwg-shared";
+import { BIOMES, MOODS, TIMES_OF_DAY, PROP_TYPES } from "iwg-shared";
 
 const app = express();
 app.use(cors());
@@ -30,20 +30,25 @@ app.get("/api/texture", async (req, res) => {
     return res.status(503).json({ error: "texture generation disabled (no API key configured)" });
   }
 
-  const { biome, mood, time_of_day: timeOfDay, kind = "ground" } = req.query;
+  const { biome, mood, time_of_day: timeOfDay, kind = "ground", type: propType } = req.query;
 
   // Validate against the shared enums rather than interpolating raw query strings into
   // a model prompt — this endpoint is unauthenticated and otherwise lets a caller drive
   // arbitrary text into a paid image API.
-  if (!BIOMES.includes(biome) || !MOODS.includes(mood) || !TIMES_OF_DAY.includes(timeOfDay)) {
-    return res.status(400).json({ error: "biome, mood, and time_of_day must be valid enum values" });
+  if (!["ground", "sky", "prop"].includes(kind)) {
+    return res.status(400).json({ error: "kind must be 'ground', 'sky', or 'prop'" });
   }
-  if (kind !== "ground" && kind !== "sky") {
-    return res.status(400).json({ error: "kind must be 'ground' or 'sky'" });
+  if (kind === "prop") {
+    // Prop materials depend only on the prop type, not on scene context.
+    if (!PROP_TYPES.includes(propType)) {
+      return res.status(400).json({ error: "type must be a valid prop type" });
+    }
+  } else if (!BIOMES.includes(biome) || !MOODS.includes(mood) || !TIMES_OF_DAY.includes(timeOfDay)) {
+    return res.status(400).json({ error: "biome, mood, and time_of_day must be valid enum values" });
   }
 
   try {
-    const { buffer, contentType } = await getTexture({ biome, mood, timeOfDay, kind });
+    const { buffer, contentType } = await getTexture({ biome, mood, timeOfDay, kind, propType });
     res.set("Content-Type", contentType);
     res.set("Cache-Control", "public, max-age=86400");
     res.send(buffer);

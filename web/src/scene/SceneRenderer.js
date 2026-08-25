@@ -8,6 +8,7 @@ import {
   sunIntensity,
   moodTintColor,
 } from "./proceduralTexture.js";
+import { applyPropTexture } from "./propTextures.js";
 
 const EYE_HEIGHT = 1.7;
 const MOVE_SPEED = 6; // units/sec
@@ -60,20 +61,38 @@ function buildProp(prop, mood) {
 
   switch (prop.type) {
     case "tree": {
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 1.4, 6), woodMat());
-      trunk.position.y = 0.7;
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, 1.5, 7), woodMat());
+      trunk.position.y = 0.75;
       const topColor = new THREE.Color(0x2e6b3a).lerp(tint, 0.15);
-      const top = new THREE.Mesh(
-        new THREE.ConeGeometry(0.9, 1.8, 8),
-        new THREE.MeshStandardMaterial({ color: topColor, roughness: 0.8 })
-      );
-      top.position.y = 2.1;
-      group.add(trunk, top);
+      // Three stacked, slightly rotated tiers read as foliage; one cone reads as a party hat.
+      const foliageMat = new THREE.MeshStandardMaterial({ color: topColor, roughness: 0.85 });
+      foliageMat.userData.foliage = true;
+      group.add(trunk);
+      const tiers = [
+        { y: 1.7, r: 1.0, h: 1.1 },
+        { y: 2.3, r: 0.78, h: 1.0 },
+        { y: 2.85, r: 0.52, h: 0.85 },
+      ];
+      for (const [i, t] of tiers.entries()) {
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 8), foliageMat);
+        cone.position.y = t.y;
+        cone.rotation.y = i * 0.4;
+        cone.userData.noTexture = true; // bark texture on leaves looks wrong
+        group.add(cone);
+      }
       break;
     }
     case "rock": {
-      const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(0.6, 0), stoneMat());
-      rock.position.y = 0.4;
+      // Jitter the vertices so rocks aren't identical faceted balls.
+      const geo = new THREE.IcosahedronGeometry(0.6, 1);
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const f = 0.78 + Math.random() * 0.44;
+        pos.setXYZ(i, pos.getX(i) * f, pos.getY(i) * f * 0.8, pos.getZ(i) * f);
+      }
+      geo.computeVertexNormals();
+      const rock = new THREE.Mesh(geo, stoneMat());
+      rock.position.y = 0.38;
       rock.rotation.set(Math.random(), Math.random(), Math.random());
       group.add(rock);
       break;
@@ -126,6 +145,7 @@ function buildProp(prop, mood) {
         new THREE.MeshStandardMaterial({ color: 0xffa23c, emissive: 0xff8c1a, emissiveIntensity: 1.5 })
       );
       flame.position.y = 1.25;
+      flame.userData.noTexture = true; // charred-wood texture on a flame reads as a rock
       group.add(stick, flame);
       group.userData.flameLight = true;
       break;
@@ -140,12 +160,32 @@ function buildProp(prop, mood) {
       break;
     }
     case "item": {
-      const item = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.3, 0),
-        new THREE.MeshStandardMaterial({ color: 0xd8b23c, emissive: 0x8a6a10, emissiveIntensity: 0.6, metalness: 0.4 })
+      // Items are the thing the player is meant to notice, so they get a faceted gem
+      // plus a glow and a ground halo rather than a plain floating blob.
+      const gem = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.32, 1),
+        new THREE.MeshStandardMaterial({
+          color: 0xf0c850,
+          emissive: 0xc08a10,
+          emissiveIntensity: 0.7,
+          metalness: 0.65,
+          roughness: 0.25,
+        })
       );
-      item.position.y = 0.9;
-      group.add(item);
+      gem.position.y = 0.95;
+      const halo = new THREE.Mesh(
+        new THREE.RingGeometry(0.3, 0.46, 20),
+        new THREE.MeshBasicMaterial({
+          color: 0xffd98a,
+          transparent: true,
+          opacity: 0.35,
+          side: THREE.DoubleSide,
+        })
+      );
+      halo.rotation.x = -Math.PI / 2;
+      halo.position.y = 0.05;
+      halo.userData.noTexture = true;
+      group.add(gem, halo);
       group.userData.bob = true;
       break;
     }
@@ -186,6 +226,10 @@ function buildProp(prop, mood) {
     }
   });
 
+  // Generated material texture arrives asynchronously and is applied in place; if
+  // generation is unavailable the prop simply keeps its flat colour.
+  applyPropTexture(group, prop.type);
+
   return group;
 }
 
@@ -224,6 +268,11 @@ export class Scene3D {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(w, h);
     this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Photographic textures rendered linearly look washed out and blow out around
+    // torches; filmic tone mapping keeps highlights under control and deepens contrast.
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
     this.container.appendChild(this.renderer.domElement);
 
     this.ambient = new THREE.AmbientLight(0xffffff, 0.9);
@@ -275,6 +324,9 @@ export class Scene3D {
     this.dynamicProps = [];
     this.propsById = new Map();
     this.cancelPlayback();
+    // Invalidates any in-flight texture request from the previous scene, so a slow
+    // response can't paint itself onto the world that replaced it.
+    this._sceneToken++;
 
     const groundGeo = new THREE.PlaneGeometry(GROUND_HALF_EXTENT * 2, GROUND_HALF_EXTENT * 2);
     const groundMat = new THREE.MeshStandardMaterial({
@@ -299,6 +351,7 @@ export class Scene3D {
     this.scene.fog.color = this.scene.background;
     this.ambient.intensity = ambientIntensity(scene.time_of_day);
     this.sun.intensity = sunIntensity(scene.time_of_day);
+    this._loadGeneratedSky(scene);
 
     // reset the player to a sensible spot each new scene rather than leaving them
     // possibly stranded outside the new ground extent
@@ -498,11 +551,48 @@ export class Scene3D {
     if (pb.t >= (action.type === "interact" ? INTERACT_DURATION : 0.3)) advance();
   }
 
+  // The flat background colour is the single largest share of the viewport, so a
+  // generated sky changes the look of the scene more than any other texture. Mapped
+  // equirectangularly: the model's output isn't a true 360 panorama, but wrapped as one
+  // it reads convincingly as sky and distant horizon.
+  async _loadGeneratedSky(scene) {
+    const token = this._sceneToken;
+    const params = new URLSearchParams({
+      biome: scene.biome,
+      mood: scene.mood,
+      time_of_day: scene.time_of_day,
+      kind: "sky",
+    });
+
+    try {
+      const res = await fetch(`${API_BASE}/texture?${params}`);
+      if (!res.ok) return; // keep the flat colour
+      const bitmap = await createImageBitmap(await res.blob());
+      if (token !== this._sceneToken) {
+        bitmap.close();
+        return;
+      }
+
+      const tex = new THREE.CanvasTexture(bitmap);
+      tex.mapping = THREE.EquirectangularReflectionMapping;
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+
+      this.scene.background?.dispose?.();
+      this.scene.background = tex;
+      // Fog must stay a colour, not the texture — keep it matched to the sky's mood so
+      // distant geometry still fades into the horizon instead of standing out against it.
+      this.scene.fog.color = skyColor(scene.mood, scene.time_of_day);
+    } catch {
+      // keep the procedural sky colour
+    }
+  }
+
   async _loadGeneratedGround(scene, groundMat) {
-    // Each setScene() bumps the token; a texture request that resolves after the player
-    // has already advanced to the next scene is discarded rather than painted onto the
+    // setScene() bumps the token; a texture request that resolves after the player has
+    // already advanced to the next scene is discarded rather than painted onto the
     // wrong world (or onto a material that's since been disposed).
-    const token = ++this._sceneToken;
+    const token = this._sceneToken;
     const params = new URLSearchParams({
       biome: scene.biome,
       mood: scene.mood,

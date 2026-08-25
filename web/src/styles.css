@@ -91,8 +91,15 @@ button:disabled { opacity: 0.6; cursor: default; }
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 60vh;
+  /* Collapsed by default so the 3D world, not the prose, is the main thing on screen.
+     Expanding is opt-in per beat (see ChoicePanel). */
+  max-height: 34vh;
+  transition: max-height 0.25s ease;
 }
+.choice-panel.expanded { max-height: 70vh; }
+
+.narrative-wrap { flex-shrink: 1; min-height: 0; display: flex; flex-direction: column; }
+
 /* Only the narrative scrolls internally — choice buttons and the free-text input
    stay pinned below it so they're never hidden off-screen behind a long beat. */
 .narrative-text {
@@ -100,10 +107,29 @@ button:disabled { opacity: 0.6; cursor: default; }
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-y: auto;
-  max-height: 26vh;
   padding-right: 6px;
-  flex-shrink: 1;
+  min-height: 0;
 }
+/* Fade the cut-off point rather than slicing mid-word, so it reads as "there's more"
+   instead of as broken text. */
+.narrative-text.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+}
+.narrative-toggle {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: #d8b23c;
+  padding: 4px 0 0;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.narrative-toggle:hover { text-decoration: underline; }
 .choice-buttons { display: flex; flex-wrap: wrap; gap: 10px; flex-shrink: 0; }
 .choice-buttons button {
   background: #26262e;
