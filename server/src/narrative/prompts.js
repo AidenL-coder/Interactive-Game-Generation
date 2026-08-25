@@ -14,12 +14,14 @@ function profileBlock(profile) {
   return lines.join("\n");
 }
 
-export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldState }) {
+export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldState, currentProps }) {
   const parts = [];
+  const persistent = ablation?.persistence === "persistent";
+  const toolName = persistent ? "emit_scene_delta" : "emit_scene";
 
   parts.push(
     "You are a game-world generation engine. You turn a piece of source narrative " +
-      "into a playable world, one beat at a time, by calling the `emit_scene` tool. " +
+      `into a playable world, one beat at a time, by calling the \`${toolName}\` tool. ` +
       "Never respond in plain prose outside the tool call."
   );
 
@@ -77,12 +79,13 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
 
   const trackPreferences = ablation?.personalization && ablation?.evolving;
   parts.push(
-    "Scene constraints for `emit_scene`:\n" +
+    `Scene constraints for \`${toolName}\`:\n` +
       `- biome ∈ {${BIOMES.join(", ")}}, mood ∈ {${MOODS.join(", ")}}, ` +
       `time_of_day ∈ {${TIMES_OF_DAY.join(", ")}}\n` +
       `- props: 5-14 items, each type ∈ {${PROP_TYPES.join(", ")}}, x and z within ` +
       `[-${GROUND_HALF_EXTENT}, ${GROUND_HALF_EXTENT}] (this is the walkable ground ` +
       "plane's half-extent), spaced so the player can walk between them\n" +
+      "- every prop needs a stable `id` (e.g. 'altar_01') and a short `label`\n" +
       "- choices: 2-4 concrete, distinct actions the player can take next\n" +
       "- narrative: 2-4 short second-person paragraphs describing the current beat" +
       (trackPreferences
@@ -91,6 +94,53 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
           "omit this field."
         : "")
   );
+
+  // The avatar acts out the chosen action in the world before control returns, so the
+  // 3D space is what the action resolves against rather than set dressing behind it.
+  parts.push(
+    "`agent_actions`: REQUIRED on every turn — an ordered list (1-3 typically, max 6) " +
+      "that acts out what the player just chose, performed automatically by their " +
+      "avatar before they regain control. Do not omit this field.\n" +
+      "Types: `walk_to` (target_id or x/z), `look_at` (target_id or x/z), `interact` " +
+      "(target_id required), `say` (text), `wait` (seconds).\n" +
+      "Reference props by their id. The prose and the actions must depict the SAME " +
+      "events: if the narrative says the player crosses to the altar and touches it, " +
+      "emit walk_to then interact targeting that altar. Even a purely conversational " +
+      "beat should have the avatar do something — look at the speaker, step closer, say " +
+      "a line.\n" +
+      "Only ever target props that exist. If the player asks to interact with something " +
+      "that isn't in the world, either add it first (it plausibly exists but wasn't " +
+      "modelled yet) or narratively redirect them to something that is there — never " +
+      "target an id that doesn't exist."
+  );
+
+  if (persistent) {
+    // Without an explicit inventory the model has to recall ids from conversation
+    // history, which is the main source of dangling-reference bugs. Listing them is
+    // cheap and removes the guesswork.
+    const inventory = (currentProps || [])
+      .map((p) => `  ${p.id} (${p.type}) at (${Math.round(p.x)}, ${Math.round(p.z)})${p.label ? ` — ${p.label}` : ""}`)
+      .join("\n");
+
+    parts.push(
+      "PERSISTENT WORLD MODE. The world continues between turns; it is not rebuilt.\n" +
+        (inventory
+          ? `Props currently in the world:\n${inventory}\n\n`
+          : "The world is currently empty — this is the opening scene.\n\n") +
+        "Emit `scene_delta` to mutate this world (add / move / remove props, and " +
+        "`ambient` for mood or time-of-day shifts). Only reference ids that exist in " +
+        "the list above or that you add in the same turn. Keep the world between 5 and " +
+        "14 props.\n" +
+        "Emit a full `scene` INSTEAD of `scene_delta` only when the story relocates " +
+        "somewhere genuinely new (a different biome/location) — that replaces the world " +
+        "wholesale. Never emit both.\n" +
+        "If the beat changes nothing physical (reading a letter, a conversation), omit " +
+        "`scene_delta` entirely — the world simply carries forward. Do not invent " +
+        "changes just to have something to report.\n" +
+        "Most turns should be a small delta or none: the world should feel continuous, " +
+        "with objects staying where the player left them."
+    );
+  }
 
   return parts.join("\n\n");
 }

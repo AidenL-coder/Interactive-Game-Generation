@@ -10,8 +10,12 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
 
+  const [playing, setPlaying] = useState(false); // avatar is acting out the last choice
+  const [speech, setSpeech] = useState(null);
+
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
+  const renderedTurnRef = useRef(null);
 
   // Mount/unmount the three.js scene exactly once, only while playing.
   useEffect(() => {
@@ -24,12 +28,40 @@ export default function App() {
     };
   }, [phase]);
 
-  // Rebuild the 3D world whenever a new worldState arrives.
+  // Reflect each new worldState in the 3D view. In persistent mode a turn usually
+  // carries a delta, which mutates the existing world (animated) rather than rebuilding
+  // it — rebuilding would throw away the continuity that mode exists to provide.
   useEffect(() => {
-    if (session?.worldState?.scene && sceneRef.current) {
-      sceneRef.current.setScene(session.worldState.scene);
+    const scene3d = sceneRef.current;
+    const ws = session?.worldState;
+    if (!scene3d || !ws?.scene) return;
+
+    const isFirstRender = renderedTurnRef.current === null;
+    const canMutate = !isFirstRender && !ws.relocated && ws.scene_delta !== undefined;
+
+    if (canMutate) {
+      // scene_delta null means "nothing physical changed" — still a valid turn.
+      if (ws.scene_delta) scene3d.applyDelta(ws.scene_delta, ws.scene.mood);
+    } else {
+      scene3d.setScene(ws.scene);
+    }
+    renderedTurnRef.current = session.turnIndex;
+
+    if (ws.agent_actions?.length) {
+      setPlaying(true);
+      scene3d.playActions(ws.agent_actions).finally(() => setPlaying(false));
     }
   }, [session?.worldState]);
+
+  // Surface `say` actions as on-screen speech while the avatar acts.
+  useEffect(() => {
+    const scene3d = sceneRef.current;
+    if (!scene3d) return undefined;
+    scene3d.onSay = setSpeech;
+    return () => {
+      scene3d.onSay = null;
+    };
+  }, [phase]);
 
   async function handleStart(payload) {
     setBusy(true);
@@ -67,7 +99,20 @@ export default function App() {
     <div className="game-root">
       <div className="scene-container" ref={containerRef} />
       <div className="hint">Click to look around · WASD to move · Esc to release</div>
-      <ChoicePanel worldState={session?.worldState} onChoose={handleChoose} busy={busy} />
+
+      {speech && <div className="speech-bubble">{speech}</div>}
+
+      {playing && (
+        <button className="skip-button" onClick={() => sceneRef.current?.cancelPlayback()}>
+          Skip ⏭
+        </button>
+      )}
+
+      <ChoicePanel
+        worldState={session?.worldState}
+        onChoose={handleChoose}
+        busy={busy || playing}
+      />
       {error && <p className="error floating-error">{error}</p>}
     </div>
   );

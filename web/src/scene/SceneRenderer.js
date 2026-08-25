@@ -14,6 +14,17 @@ const MOVE_SPEED = 6; // units/sec
 const MAX_POINT_LIGHTS = 4; // cap live lights (torches) for perf
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
+// Agent-action playback tuning. Turn and translate are deliberately sequential, and
+// both eased, to keep automated camera movement comfortable to watch.
+const TURN_DURATION = 0.45;
+const INTERACT_DURATION = 0.6;
+const SAY_DURATION = 2.2;
+const STOP_DISTANCE = 2.2; // stop short of a target rather than inside it
+const PROP_TWEEN_DURATION = 0.6;
+
+const COLLISION_RADIUS = 0.9;
+const PASSABLE_PROPS = new Set(["water", "item"]);
+
 function labelSprite(text) {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -227,6 +238,11 @@ export class Scene3D {
     this.groundMesh = null;
     this.dynamicProps = [];
     this._sceneToken = 0;
+    this.propsById = new Map();
+    this.playback = null;
+    this.onSay = null; // set by the UI to surface `say` action text
+    this._lightsUsed = 0;
+    this._mood = "serene";
   }
 
   _initControls() {
@@ -241,18 +257,24 @@ export class Scene3D {
     this.renderer.setSize(w, h);
   }
 
+  _disposeObject(obj) {
+    obj.traverse?.((o) => {
+      if (o.isMesh || o.isSprite) {
+        o.geometry?.dispose?.();
+        if (Array.isArray(o.material)) o.material.forEach((m) => m.dispose());
+        else o.material?.dispose?.();
+      }
+    });
+  }
+
   /** Rebuilds the world group from a WorldState.scene object (see shared/worldState.js). */
   setScene(scene) {
     // dispose previous world geometry/materials before rebuilding
-    this.worldGroup.traverse((obj) => {
-      if (obj.isMesh || obj.isSprite) {
-        obj.geometry?.dispose?.();
-        if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
-        else obj.material?.dispose?.();
-      }
-    });
+    this._disposeObject(this.worldGroup);
     this.worldGroup.clear();
     this.dynamicProps = [];
+    this.propsById = new Map();
+    this.cancelPlayback();
 
     const groundGeo = new THREE.PlaneGeometry(GROUND_HALF_EXTENT * 2, GROUND_HALF_EXTENT * 2);
     const groundMat = new THREE.MeshStandardMaterial({
@@ -269,18 +291,9 @@ export class Scene3D {
     // swapped in on arrival rather than blocking the scene on it.
     this._loadGeneratedGround(scene, groundMat);
 
-    let lightsUsed = 0;
-    for (const prop of scene.props || []) {
-      const group = buildProp(prop, scene.mood);
-      this.worldGroup.add(group);
-      if (group.userData.bob) this.dynamicProps.push({ group, kind: "bob", base: 0.9 });
-      if (group.userData.flameLight && lightsUsed < MAX_POINT_LIGHTS) {
-        const light = new THREE.PointLight(0xff9640, 1.2, 6, 2);
-        light.position.set(prop.x, 1.3, prop.z);
-        this.worldGroup.add(light);
-        lightsUsed++;
-      }
-    }
+    this._lightsUsed = 0;
+    this._mood = scene.mood;
+    for (const prop of scene.props || []) this._addProp(prop, scene.mood);
 
     this.scene.background = skyColor(scene.mood, scene.time_of_day);
     this.scene.fog.color = this.scene.background;
@@ -290,6 +303,199 @@ export class Scene3D {
     // reset the player to a sensible spot each new scene rather than leaving them
     // possibly stranded outside the new ground extent
     this.camera.position.set(0, EYE_HEIGHT, GROUND_HALF_EXTENT * 0.6);
+  }
+
+  _addProp(prop, mood) {
+    const group = buildProp(prop, mood ?? this._mood);
+    group.userData.propId = prop.id;
+    this.worldGroup.add(group);
+    this.propsById.set(prop.id, { group, prop: { ...prop } });
+
+    if (group.userData.bob) this.dynamicProps.push({ group, kind: "bob", base: 0.9 });
+    if (group.userData.flameLight && this._lightsUsed < MAX_POINT_LIGHTS) {
+      const light = new THREE.PointLight(0xff9640, 1.2, 6, 2);
+      light.position.set(prop.x, 1.3, prop.z);
+      group.userData.light = light;
+      this.worldGroup.add(light);
+      this._lightsUsed++;
+    }
+    return group;
+  }
+
+  _removeProp(id) {
+    const entry = this.propsById.get(id);
+    if (!entry) return;
+    const { group } = entry;
+    if (group.userData.light) {
+      this.worldGroup.remove(group.userData.light);
+      this._lightsUsed = Math.max(0, this._lightsUsed - 1);
+    }
+    this.dynamicProps = this.dynamicProps.filter((d) => d.group !== group);
+    this.worldGroup.remove(group);
+    this._disposeObject(group);
+    this.propsById.delete(id);
+  }
+
+  /**
+   * Applies a scene_delta in place, so the world mutates instead of being rebuilt.
+   * Moves are animated (see _animate) rather than snapped, so the change is legible
+   * as a change rather than reading as a new scene.
+   */
+  applyDelta(delta, mood) {
+    if (!delta) return;
+    if (mood) this._mood = mood;
+
+    for (const prop of delta.add || []) {
+      if (this.propsById.has(prop.id)) this._removeProp(prop.id);
+      const group = this._addProp(prop, this._mood);
+      // fade/pop in so appearing objects read as arriving, not as always-having-been
+      group.scale.multiplyScalar(0.01);
+      this.dynamicProps.push({
+        group,
+        kind: "grow",
+        target: prop.scale && prop.scale > 0 ? prop.scale : 1,
+        t: 0,
+      });
+    }
+
+    for (const m of delta.move || []) {
+      const entry = this.propsById.get(m.id);
+      if (!entry) continue;
+      entry.prop.x = m.x;
+      entry.prop.z = m.z;
+      this.dynamicProps.push({
+        group: entry.group,
+        kind: "slide",
+        from: { x: entry.group.position.x, z: entry.group.position.z },
+        to: { x: m.x, z: m.z },
+        t: 0,
+      });
+    }
+
+    for (const id of delta.remove || []) this._removeProp(id);
+  }
+
+  /**
+   * Plays the avatar's actions for a turn: the camera walks/turns/acts on the player's
+   * behalf before control returns. Deliberately turn-then-move rather than both at once,
+   * and eased at both ends — simultaneous rotation+translation is the main trigger for
+   * motion discomfort here.
+   *
+   * @returns {Promise<void>} resolves when playback finishes or is skipped
+   */
+  playActions(actions) {
+    this.cancelPlayback();
+    const queue = (actions || []).filter((a) => a && a.type);
+    if (!queue.length) return Promise.resolve();
+
+    this.controls.unlock?.();
+    return new Promise((resolve) => {
+      this.playback = { queue, index: 0, phase: "start", t: 0, resolve, say: null };
+    });
+  }
+
+  cancelPlayback() {
+    if (this.playback) {
+      const { resolve } = this.playback;
+      this.playback = null;
+      this.onSay?.(null);
+      resolve?.();
+    }
+  }
+
+  _resolveTarget(action) {
+    if (action.target_id) {
+      const entry = this.propsById.get(action.target_id);
+      if (entry) return new THREE.Vector3(entry.prop.x, 0, entry.prop.z);
+    }
+    if (typeof action.x === "number" && typeof action.z === "number") {
+      return new THREE.Vector3(action.x, 0, action.z);
+    }
+    return null;
+  }
+
+  _stepPlayback(dt) {
+    const pb = this.playback;
+    const action = pb.queue[pb.index];
+    if (!action) {
+      this.cancelPlayback();
+      return;
+    }
+
+    const advance = () => {
+      pb.index++;
+      pb.phase = "start";
+      pb.t = 0;
+      pb.say = null;
+      this.onSay?.(null);
+      if (pb.index >= pb.queue.length) this.cancelPlayback();
+    };
+
+    // ease in/out — constant-velocity camera motion is what reads as "floaty"
+    const ease = (u) => (u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2);
+
+    if (action.type === "wait") {
+      pb.t += dt;
+      if (pb.t >= Math.min(action.seconds ?? 1, 4)) advance();
+      return;
+    }
+
+    if (action.type === "say") {
+      if (pb.phase === "start") {
+        pb.phase = "saying";
+        pb.t = 0;
+        this.onSay?.(action.text);
+      }
+      pb.t += dt;
+      if (pb.t >= SAY_DURATION) advance();
+      return;
+    }
+
+    const target = this._resolveTarget(action);
+    if (!target) return advance();
+
+    if (pb.phase === "start") {
+      // Face the target first; only then translate.
+      const dir = new THREE.Vector3(target.x - this.camera.position.x, 0, target.z - this.camera.position.z);
+      pb.startQuat = this.camera.quaternion.clone();
+      const look = new THREE.Object3D();
+      look.position.copy(this.camera.position);
+      look.lookAt(target.x, EYE_HEIGHT, target.z);
+      pb.endQuat = look.quaternion.clone();
+      pb.from = this.camera.position.clone();
+      // stop short so we don't end up standing inside the object
+      const dist = Math.max(dir.length() - STOP_DISTANCE, 0);
+      pb.to = pb.from.clone().add(dir.normalize().multiplyScalar(dist));
+      pb.to.y = EYE_HEIGHT;
+      pb.phase = "turn";
+      pb.t = 0;
+    }
+
+    if (pb.phase === "turn") {
+      pb.t += dt;
+      const u = Math.min(pb.t / TURN_DURATION, 1);
+      this.camera.quaternion.slerpQuaternions(pb.startQuat, pb.endQuat, ease(u));
+      if (u >= 1) {
+        pb.phase = action.type === "walk_to" ? "move" : "act";
+        pb.t = 0;
+      }
+      return;
+    }
+
+    if (pb.phase === "move") {
+      const distance = pb.from.distanceTo(pb.to);
+      const duration = Math.max(distance / MOVE_SPEED, 0.25);
+      pb.t += dt;
+      const u = Math.min(pb.t / duration, 1);
+      this.camera.position.lerpVectors(pb.from, pb.to, ease(u));
+      this.camera.position.y = EYE_HEIGHT;
+      if (u >= 1) advance();
+      return;
+    }
+
+    // look_at / interact: brief beat once facing the target
+    pb.t += dt;
+    if (pb.t >= (action.type === "interact" ? INTERACT_DURATION : 0.3)) advance();
   }
 
   async _loadGeneratedGround(scene, groundMat) {
@@ -330,17 +536,42 @@ export class Scene3D {
     }
   }
 
+  // Blocks the camera from walking through solid props. Water and items are passable so
+  // the player can stand on/over them; everything else pushes back.
+  _blocked(x, z) {
+    for (const { prop } of this.propsById.values()) {
+      if (PASSABLE_PROPS.has(prop.type)) continue;
+      const r = COLLISION_RADIUS * (prop.scale && prop.scale > 0 ? prop.scale : 1);
+      const dx = x - prop.x;
+      const dz = z - prop.z;
+      if (dx * dx + dz * dz < r * r) return true;
+    }
+    return false;
+  }
+
   _animate() {
     const dt = Math.min(this.clock.getDelta(), 0.1);
 
-    if (this.controls.isLocked) {
+    if (this.playback) {
+      this._stepPlayback(dt);
+    } else if (this.controls.isLocked) {
       const dir = new THREE.Vector3();
       const forward = (this.keys.has("KeyW") ? 1 : 0) - (this.keys.has("KeyS") ? 1 : 0);
       const strafe = (this.keys.has("KeyD") ? 1 : 0) - (this.keys.has("KeyA") ? 1 : 0);
       if (forward || strafe) {
+        const before = this.camera.position.clone();
         dir.set(strafe, 0, -forward).normalize();
         this.controls.moveRight(dir.x * MOVE_SPEED * dt);
         this.controls.moveForward(-dir.z * MOVE_SPEED * dt);
+
+        // resolve each axis separately so hitting a wall slides along it rather than
+        // sticking the player in place
+        const { x, z } = this.camera.position;
+        if (this._blocked(x, z)) {
+          if (!this._blocked(x, before.z)) this.camera.position.z = before.z;
+          else if (!this._blocked(before.x, z)) this.camera.position.x = before.x;
+          else this.camera.position.copy(before);
+        }
       }
       const limit = GROUND_HALF_EXTENT - 0.5;
       this.camera.position.x = THREE.MathUtils.clamp(this.camera.position.x, -limit, limit);
@@ -349,8 +580,25 @@ export class Scene3D {
     }
 
     const t = performance.now() / 1000;
+    let settled = false;
     for (const p of this.dynamicProps) {
-      if (p.kind === "bob") p.group.position.y = Math.sin(t * 2) * 0.1;
+      if (p.kind === "bob") {
+        p.group.position.y = Math.sin(t * 2) * 0.1;
+      } else if (p.kind === "grow") {
+        p.t = Math.min(p.t + dt / PROP_TWEEN_DURATION, 1);
+        p.group.scale.setScalar(p.target * p.t);
+        if (p.t >= 1) settled = true;
+      } else if (p.kind === "slide") {
+        p.t = Math.min(p.t + dt / PROP_TWEEN_DURATION, 1);
+        const u = p.t < 0.5 ? 2 * p.t * p.t : 1 - (-2 * p.t + 2) ** 2 / 2;
+        p.group.position.x = THREE.MathUtils.lerp(p.from.x, p.to.x, u);
+        p.group.position.z = THREE.MathUtils.lerp(p.from.z, p.to.z, u);
+        if (p.t >= 1) settled = true;
+      }
+    }
+    // drop finished one-shot tweens; 'bob' loops forever so it always stays
+    if (settled) {
+      this.dynamicProps = this.dynamicProps.filter((p) => p.kind === "bob" || p.t < 1);
     }
 
     this.renderer.render(this.scene, this.camera);

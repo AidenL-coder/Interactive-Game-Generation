@@ -75,12 +75,19 @@ export function generateTemplateScene({ profile, ablation, turnMessage, lastWorl
   const interest = ablation?.personalization ? (profile?.interests || []).filter(Boolean)[0] : null;
 
   const propCount = MIN_PROPS + Math.floor(rng() * (MAX_PROPS - MIN_PROPS + 1));
-  const props = Array.from({ length: propCount }, () => ({
-    type: pick(rng, PROP_TYPES),
-    x: Math.round((rng() * 2 - 1) * GROUND_HALF_EXTENT * 0.9),
-    z: Math.round((rng() * 2 - 1) * GROUND_HALF_EXTENT * 0.9),
-    scale: Math.round((0.6 + rng() * 1.2) * 10) / 10,
-  }));
+  const props = Array.from({ length: propCount }, (_, i) => {
+    const type = pick(rng, PROP_TYPES);
+    return {
+      // Ids are required by the schema now. The baseline has no notion of persistence
+      // (every turn is independent), so these are unique-per-turn rather than stable
+      // across turns — which is itself the honest representation of this baseline.
+      id: `tpl_${type}_${i}`,
+      type,
+      x: Math.round((rng() * 2 - 1) * GROUND_HALF_EXTENT * 0.9),
+      z: Math.round((rng() * 2 - 1) * GROUND_HALF_EXTENT * 0.9),
+      scale: Math.round((0.6 + rng() * 1.2) * 10) / 10,
+    };
+  });
 
   let narrative = pick(rng, NARRATIVE_TEMPLATES)
     .replaceAll("{name}", name)

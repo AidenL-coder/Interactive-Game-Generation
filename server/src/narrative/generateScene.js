@@ -1,4 +1,10 @@
-import { WORLD_STATE_TOOL, validateWorldState } from "iwg-shared";
+import {
+  WORLD_STATE_TOOL,
+  WORLD_STATE_DELTA_TOOL,
+  validateWorldState,
+  validateDeltaTurn,
+  applySceneDelta,
+} from "iwg-shared";
 import { anthropic, CLAUDE_MODEL } from "../anthropic.js";
 import {
   buildSystemPrompt,
@@ -11,9 +17,11 @@ import { generateTemplateScene } from "./templateBaseline.js";
 // but "always" per the API contract isn't "always" in practice (rate limits,
 // truncation, model refusal), so this throws with a message that's actually useful
 // in the eval log rather than a generic destructure crash.
+const TOOL_NAMES = new Set([WORLD_STATE_TOOL.name, WORLD_STATE_DELTA_TOOL.name]);
+
 function findToolUse(response) {
   return response.content.find(
-    (block) => block.type === "tool_use" && block.name === WORLD_STATE_TOOL.name
+    (block) => block.type === "tool_use" && TOOL_NAMES.has(block.name)
   );
 }
 
@@ -21,7 +29,7 @@ function extractToolInput(response) {
   const toolUse = findToolUse(response);
   if (!toolUse) {
     throw new Error(
-      `No ${WORLD_STATE_TOOL.name} tool_use block in response (stop_reason: ${response.stop_reason})`
+      `No scene tool_use block in response (stop_reason: ${response.stop_reason})`
     );
   }
   return toolUse.input;
@@ -49,6 +57,60 @@ function buildEvolvingUserContent(history, turnMessage) {
     { type: "tool_result", tool_use_id: toolUse.id, content: "Scene received." },
     { type: "text", text: turnMessage },
   ];
+}
+
+// Repair rather than reject. A dangling agent-action reference (the model names a prop
+// that doesn't exist) makes that one action unplayable, but the narrative, delta, and
+// choices around it are usually fine — failing the whole turn over it hands the player
+// a 502 for a cosmetic fault. So drop the offending actions and continue.
+//
+// The spatial counters are recorded BEFORE this runs, so measurement still sees the
+// model's unrepaired output; repair changes what the player gets, not what we report.
+// (docs/literature-review.md §4.3 notes G-KMS does normalization-repair where this
+// project previously only retried from scratch — this is that, narrowly scoped.)
+function repairAgentActions(turn, knownIds) {
+  if (!Array.isArray(turn.agent_actions)) return { turn, repaired: 0 };
+  const known = new Set(knownIds);
+  const kept = turn.agent_actions.filter((a) => !a?.target_id || known.has(a.target_id));
+  const repaired = turn.agent_actions.length - kept.length;
+  if (!repaired) return { turn, repaired: 0 };
+  return { turn: { ...turn, agent_actions: kept }, repaired };
+}
+
+function propIdsAfter(turn, currentProps) {
+  if (turn.scene?.props) return turn.scene.props.map((p) => p.id);
+  const ids = new Set(currentProps.map((p) => p.id));
+  for (const p of turn.scene_delta?.add || []) ids.add(p.id);
+  for (const id of turn.scene_delta?.remove || []) ids.delete(id);
+  return [...ids];
+}
+
+// Resolves a delta turn into the same shape the renderer already understands: a full
+// `scene`, plus the `scene_delta` that produced it. The client needs both — the full
+// scene to know what the world *is*, the delta to know what to animate rather than
+// snapping everything into place.
+function materializeDeltaTurn(turn, lastWorldState) {
+  const prev = lastWorldState?.scene;
+
+  if (turn.scene) {
+    // Relocation: the old world is discarded wholesale, nothing to animate from.
+    return { ...turn, scene_delta: null, relocated: true };
+  }
+
+  // No delta at all is legal and means "nothing physical changed this turn" — the
+  // previous scene carries forward untouched.
+  const delta = turn.scene_delta || {};
+  return {
+    ...turn,
+    scene: {
+      biome: prev?.biome,
+      mood: delta.ambient?.mood ?? prev?.mood,
+      time_of_day: delta.ambient?.time_of_day ?? prev?.time_of_day,
+      props: applySceneDelta(prev?.props || [], delta),
+    },
+    scene_delta: turn.scene_delta || null,
+    relocated: false,
+  };
 }
 
 /**
@@ -80,7 +142,20 @@ export async function generateScene({
     return generateTemplateScene({ profile, ablation, turnMessage, lastWorldState });
   }
 
-  const system = buildSystemPrompt({ profile, sourceText, ablation, lastWorldState });
+  // Persistent mode keeps a live prop registry across turns; the world mutates rather
+  // than being rebuilt. The opening turn has nothing to mutate, so it always uses the
+  // full-scene tool regardless of mode.
+  const currentProps = lastWorldState?.scene?.props || [];
+  const usingDelta = ablation?.persistence === "persistent" && currentProps.length > 0;
+  const tool = usingDelta ? WORLD_STATE_DELTA_TOOL : WORLD_STATE_TOOL;
+
+  const system = buildSystemPrompt({
+    profile,
+    sourceText,
+    ablation,
+    lastWorldState,
+    currentProps,
+  });
 
   const userContent = ablation.evolving
     ? buildEvolvingUserContent(history, turnMessage)
@@ -93,6 +168,7 @@ export async function generateScene({
   const startedAt = Date.now();
   let response, worldState;
   let lastViolations = [];
+  let spatial = null;
   let attempts = 0;
 
   for (; attempts < MAX_GENERATION_ATTEMPTS; attempts++) {
@@ -101,26 +177,57 @@ export async function generateScene({
       max_tokens: 2048,
       system,
       messages,
-      tools: [WORLD_STATE_TOOL],
-      tool_choice: { type: "tool", name: WORLD_STATE_TOOL.name },
+      tools: [tool],
+      tool_choice: { type: "tool", name: tool.name },
     });
 
-    const candidate = extractToolInput(response);
-    const check = validateWorldState(candidate);
+    const rawCandidate = extractToolInput(response);
+    const knownIds = currentProps.map((p) => p.id);
+    const validate = (c) =>
+      usingDelta ? validateDeltaTurn(c, knownIds) : validateWorldState(c);
+
+    let check = validate(rawCandidate);
+
+    // Spatial counters are recorded from the FIRST attempt, pre-repair: they measure how
+    // often the model gets the world right unaided, which is the research question.
+    // Reading them off a repaired or post-retry success would flatter the numbers.
+    if (attempts === 0) spatial = check.spatial;
+
+    // Salvage an otherwise-good turn whose only fault is unplayable action targets.
+    let candidate = rawCandidate;
+    if (!check.valid) {
+      const { turn: fixed, repaired } = repairAgentActions(
+        rawCandidate,
+        propIdsAfter(rawCandidate, currentProps)
+      );
+      if (repaired) {
+        const recheck = validate(fixed);
+        if (recheck.valid) {
+          console.warn(`[generateScene] repaired ${repaired} dangling agent action(s)`);
+          candidate = fixed;
+          check = recheck;
+        }
+      }
+    }
+
     if (check.valid) {
-      worldState = candidate;
+      worldState = usingDelta
+        ? materializeDeltaTurn(candidate, lastWorldState)
+        : candidate;
       break;
     }
     lastViolations = check.violations;
     console.warn(
-      `[generateScene] invalid WorldState on attempt ${attempts + 1}/${MAX_GENERATION_ATTEMPTS}: ${lastViolations.join("; ")}`
+      `[generateScene] invalid ${usingDelta ? "delta" : "WorldState"} on attempt ` +
+        `${attempts + 1}/${MAX_GENERATION_ATTEMPTS}: ${lastViolations.join("; ")}`
     );
   }
   const latencyMs = Date.now() - startedAt;
 
   if (!worldState) {
     throw new Error(
-      `Model returned an invalid WorldState after ${MAX_GENERATION_ATTEMPTS} attempts: ${lastViolations.join("; ")}`
+      `Model returned an invalid ${usingDelta ? "delta" : "WorldState"} after ` +
+        `${MAX_GENERATION_ATTEMPTS} attempts: ${lastViolations.join("; ")}`
     );
   }
 
@@ -135,5 +242,5 @@ export async function generateScene({
     : history;
 
   const usage = response.usage ? { ...response.usage, attempts: attempts + 1 } : null;
-  return { worldState, newHistory, usage, latencyMs };
+  return { worldState, newHistory, usage, latencyMs, spatial };
 }

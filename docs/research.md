@@ -65,9 +65,48 @@ code changes (`server/src/narrative/prompts.js`, `sessionStore` ablation config)
   covered, which optimizes a level once per player model rather than adapting turn by
   turn).
 
-This gives a 2×2 design (personalization × evolving) for the eventual ablation table,
-plus room for a third baseline of pure human-authored or template-based worlds if a
-non-LLM baseline is wanted for the paper.
+- **`persistence`**: `persistent` = the world is a durable object that mutates across
+  turns via `scene_delta` (add/move/remove props, ambient shifts), with props carrying
+  stable ids; `regenerated` = every turn rebuilds the scene from scratch (the original
+  behaviour). This is what makes the 3D layer causally load-bearing rather than
+  decorative: under `persistent`, the spatial layout is the substrate the player's
+  action resolves against, and objects stay where the player left them.
+
+Orthogonally to persistence, every turn also emits `agent_actions` — a short queue
+(`walk_to` / `look_at` / `interact` / `say` / `wait`, targeting props by id) that the
+avatar performs before control returns. These are emitted in **both** persistence modes
+deliberately: confining them to `persistent` would confound the persistence axis with
+the presence of embodied action, making a result attributable to neither.
+
+This gives a 2×2×2×2 design (personalization × evolving × persistence × engine) for the
+eventual ablation table, with the template engine as the non-LLM floor.
+
+### Spatial consistency: a failure mode unique to this setting
+
+Persistence introduces failure modes that linear text generation cannot exhibit, and
+which are cheap to detect structurally (no judge call required). `validateDeltaTurn()`
+in `shared/worldState.js` counts, per turn, on the model's **first, unrepaired** output:
+
+- **dangling references** — a delta or agent action naming a prop id that doesn't exist
+- **duplicate ids** — the same identity minted twice for different objects
+- **out-of-bounds** — a prop moved off the walkable plane
+
+These are logged per-turn as `spatial` in `generations.jsonl`. This is the spatial
+analogue of ConStory-Bench's contradiction detection (see `literature-review.md` §2.5),
+in a setting none of the nearest neighbours occupy — and it's the concrete form of the
+novelty claim that doc's §5 identifies as the sharpest available.
+
+An early observation worth confirming at scale: explicitly injecting the current prop
+inventory into each prompt (ids, types, positions, labels) appears to largely eliminate
+dangling references. Before that injection existed, the model referenced props from an
+entirely different session's world. That prompt-design choice is therefore itself an
+ablatable variable, and a plausible small finding.
+
+Note on repair vs. measurement: a dangling agent-action reference is repaired (the
+offending action is dropped) rather than failing the turn, since the surrounding
+narrative is usually fine and a hard failure hands the player a 502 over a cosmetic
+fault. The spatial counters are recorded *before* repair, so measurement reflects the
+model's unaided output while the player still gets a playable turn.
 
 ## Relation to prior work surveyed this summer
 

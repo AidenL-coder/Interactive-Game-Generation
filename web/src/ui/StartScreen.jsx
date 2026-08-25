@@ -7,6 +7,7 @@ export default function StartScreen({ onStart, busy, error }) {
   const [personalization, setPersonalization] = useState(true);
   const [evolving, setEvolving] = useState(true);
   const [engine, setEngine] = useState("llm");
+  const [persistent, setPersistent] = useState(true);
 
   function submit(e) {
     e.preventDefault();
@@ -17,7 +18,12 @@ export default function StartScreen({ onStart, busy, error }) {
         interests: interests.split(",").map((s) => s.trim()).filter(Boolean),
       },
       sourceText: sourceText.trim(),
-      ablation: { personalization, evolving, engine },
+      ablation: {
+        personalization,
+        evolving,
+        engine,
+        persistence: persistent ? "persistent" : "regenerated",
+      },
     });
   }
 
@@ -67,6 +73,14 @@ export default function StartScreen({ onStart, busy, error }) {
           <label className="checkbox">
             <input type="checkbox" checked={evolving} onChange={(e) => setEvolving(e.target.checked)} />
             Evolving narrative (vs. memoryless baseline)
+          </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={persistent}
+              onChange={(e) => setPersistent(e.target.checked)}
+            />
+            Persistent world (vs. regenerated each turn)
           </label>
         </div>
 

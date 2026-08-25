@@ -5,4 +5,5 @@ dist/
 server/logs/*.jsonl
 server/.texture-cache/
 eval/out/
+.demo-logs/
 .DS_Store

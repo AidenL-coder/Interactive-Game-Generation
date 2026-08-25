@@ -33,6 +33,7 @@ export async function logGeneration({
   worldState,
   usage,
   latencyMs,
+  spatial,
   error,
 }) {
   const record = {
@@ -46,6 +47,9 @@ export async function logGeneration({
     worldState: worldState ?? null,
     usage: usage ?? null,
     latencyMs: latencyMs ?? null,
+    // First-attempt spatial-consistency counters (dangling refs, duplicate ids,
+    // out-of-bounds). Null for template/non-LLM turns.
+    spatial: spatial ?? null,
     error: error ? String(error?.message || error) : null,
   };
   try {

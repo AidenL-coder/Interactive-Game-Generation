@@ -63,7 +63,7 @@ app.post("/api/sessions", async (req, res) => {
   const turnMessage = firstTurnMessage();
 
   try {
-    const { worldState, newHistory, usage, latencyMs } = await generateScene({
+    const { worldState, newHistory, usage, latencyMs, spatial } = await generateScene({
       profile: session.profile,
       sourceText: session.sourceText,
       ablation: session.ablation,
@@ -88,6 +88,7 @@ app.post("/api/sessions", async (req, res) => {
       worldState,
       usage,
       latencyMs,
+      spatial,
     });
 
     res.json(publicSession(getSession(session.id)));
@@ -125,7 +126,7 @@ app.post("/api/sessions/:id/choice", async (req, res) => {
   const turnMessage = choiceTurnMessage({ choiceText: choice?.text, freeText });
 
   try {
-    const { worldState, newHistory, usage, latencyMs } = await generateScene({
+    const { worldState, newHistory, usage, latencyMs, spatial } = await generateScene({
       profile: session.profile,
       sourceText: session.sourceText,
       ablation: session.ablation,
@@ -151,6 +152,7 @@ app.post("/api/sessions/:id/choice", async (req, res) => {
       worldState,
       usage,
       latencyMs,
+      spatial,
     });
 
     res.json(publicSession(getSession(session.id)));

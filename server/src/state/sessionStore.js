@@ -17,6 +17,9 @@ export function createSession({ profile, sourceText, ablation }) {
       personalization: ablation?.personalization ?? true,
       evolving: ablation?.evolving ?? true,
       engine: ablation?.engine === "template" ? "template" : "llm",
+      // "persistent" = world mutates across turns via deltas; "regenerated" = each turn
+      // rebuilds the scene from scratch (the original behaviour, kept as the baseline).
+      persistence: ablation?.persistence === "persistent" ? "persistent" : "regenerated",
     },
     history: [],
     lastWorldState: null,
