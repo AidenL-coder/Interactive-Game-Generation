@@ -158,6 +158,30 @@ console.log("\n--- applySceneDelta ---");
   check("move of missing id is a no-op", out.length === 2);
 }
 
+console.log("\n--- endings ---");
+{
+  const ending = { outcome: "victory", epilogue: "The tide went out. You lived." };
+
+  // A finished story has nothing left to choose, and demanding choices made generation
+  // fail at exactly the moment a session reached its climax.
+  check(
+    "ending turn may omit choices",
+    validateWorldState({ narrative: "n", scene: baseScene, ending }).valid
+  );
+  check(
+    "ending turn may have empty choices",
+    validateWorldState({ narrative: "n", scene: baseScene, choices: [], ending }).valid
+  );
+  check(
+    "unfinished turn still requires choices",
+    !validateWorldState({ narrative: "n", scene: baseScene }).valid
+  );
+  check(
+    "delta ending turn may omit choices",
+    validateDeltaTurn({ narrative: "n", scene_delta: { remove: ["p0"] }, ending }, known).valid
+  );
+}
+
 console.log("\n--- validateParts (objects assembled from primitives) ---");
 {
   // Parts describe real geometry, so a malformed one becomes a visible defect rather

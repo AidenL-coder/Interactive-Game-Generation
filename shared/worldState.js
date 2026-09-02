@@ -130,7 +130,11 @@ export const GROUND_HALF_EXTENT = 20;
 
 export const MIN_PROPS = 5;
 export const MAX_PROPS = 14;
-export const MIN_CHOICES = 2;
+// One is allowed, not encouraged. Twice now a session failed at its climax because the
+// model offered a single inevitable action — "get him down the tower, now" — which is
+// dramatically right and which a floor of 2 rejected. The prompt still asks for 2-4;
+// validation just stops overruling the story at the moment it matters most.
+export const MIN_CHOICES = 1;
 export const MAX_CHOICES = 4;
 
 // Actions the avatar performs before control returns to the player. Capped so a turn's
@@ -266,6 +270,9 @@ const AGENT_ACTIONS_SCHEMA = {
 
 const CHOICES_SCHEMA = {
   type: "array",
+  description:
+    "2-4 actions the player can take next. Omit ONLY on the final turn, when `ending` " +
+    "is set and there is nothing left to choose.",
   minItems: MIN_CHOICES,
   maxItems: MAX_CHOICES,
   items: {
@@ -363,7 +370,7 @@ export const WORLD_STATE_TOOL = {
       ending: ENDING_SCHEMA,
       state_updates: STATE_UPDATES_SCHEMA,
     },
-    required: ["narrative", "scene", "choices"],
+    required: ["narrative", "scene"],
   },
 };
 
@@ -438,7 +445,7 @@ export const WORLD_STATE_DELTA_TOOL = {
       ending: ENDING_SCHEMA,
       state_updates: STATE_UPDATES_SCHEMA,
     },
-    required: ["narrative", "choices"],
+    required: ["narrative"],
   },
 };
 
@@ -561,11 +568,14 @@ function checkProps(props, violations, spatial, { path = "props" } = {}) {
   return ids;
 }
 
-function checkChoices(choices, violations) {
+// `ended` relaxes the requirement: a story that has finished has no next choice, and
+// demanding one made generation fail at the exact moment a session reached its climax.
+function checkChoices(choices, violations, ended = false) {
   if (!Array.isArray(choices)) {
-    violations.push("choices missing/not an array");
+    if (!ended) violations.push("choices missing/not an array");
     return;
   }
+  if (ended && choices.length === 0) return;
   if (choices.length < MIN_CHOICES || choices.length > MAX_CHOICES) {
     violations.push(`choices.length=${choices.length} outside [${MIN_CHOICES}, ${MAX_CHOICES}]`);
   }
@@ -631,7 +641,7 @@ export function validateWorldState(ws) {
     ids = checkProps(scene.props, violations, spatial, { path: "scene.props" });
   }
 
-  checkChoices(ws.choices, violations);
+  checkChoices(ws.choices, violations, Boolean(ws.ending));
   checkAgentActions(ws.agent_actions, ids, violations, spatial);
 
   return { valid: violations.length === 0, violations, spatial };
@@ -754,7 +764,7 @@ export function validateDeltaTurn(turn, knownPropIds = []) {
     }
   }
 
-  checkChoices(turn.choices, violations);
+  checkChoices(turn.choices, violations, Boolean(turn.ending));
   checkAgentActions(turn.agent_actions, idsAfter ?? new Set(), violations, spatial);
 
   return { valid: violations.length === 0, violations, spatial };

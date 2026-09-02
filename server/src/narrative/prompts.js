@@ -96,7 +96,9 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
       "- give at least one prop `character: true` where it makes sense — a person or " +
       "creature the player can walk up to and talk to, named in the label\n" +
       "- every prop needs `parts`: the object built as real 3D geometry (see below)\n" +
-      "- choices: 2-4 concrete, distinct actions the player can take next\n" +
+      "- choices: 2-4 concrete, distinct actions the player can take next. A single " +
+      "choice is allowed only at a climax where there is genuinely one thing left to " +
+      "do, and none at all only on the turn the story ends\n" +
       "- narrative: 2-4 short second-person paragraphs describing the current beat\n" +
       // Displayed to the player as a status panel. Without visible, changing stakes a
       // choice has no felt consequence, however good the prose is.
