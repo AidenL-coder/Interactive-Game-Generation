@@ -1,18 +1,17 @@
 import * as THREE from "three";
 import { PointerLockControls } from "three/addons/controls/PointerLockControls.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { GROUND_HALF_EXTENT } from "iwg-shared";
-import {
-  groundTexture,
-  skyColor,
-  ambientIntensity,
-  sunIntensity,
-  moodTintColor,
-  sunSetup,
-  fogRange,
-} from "./proceduralTexture.js";
+import { paletteOf, lightingOf, fogOf } from "./palette.js";
 import { applyPropTexture } from "./propTextures.js";
-import { attachSprite, SPRITE_TYPES } from "./propSprites.js";
+import { attachSprite } from "./propSprites.js";
 import { attachModel } from "./propModels.js";
+import { GEOMETRIC_FORMS, PASSABLE_FORMS } from "iwg-shared";
 import { buildScatter } from "./scatter.js";
 import { heightAt, seedFromScene } from "./terrain.js";
 
@@ -31,7 +30,7 @@ const STOP_DISTANCE = 2.2; // stop short of a target rather than inside it
 const PROP_TWEEN_DURATION = 0.6;
 
 const COLLISION_RADIUS = 0.9;
-const PASSABLE_PROPS = new Set(["water", "item"]);
+
 
 // How generous the "what am I looking at" test is, for the on-demand prop label.
 const FOCUS_MAX_DISTANCE = 9;
@@ -45,6 +44,39 @@ const HORIZON_MARGIN = 60;
 // how far back to stand from it.
 const VANTAGE_SAMPLES = 24;
 const VANTAGE_DISTANCE = 13;
+const OPENING_PITCH = THREE.MathUtils.degToRad(11);
+
+// Subtle darkening toward the frame edge. Costs almost nothing and does a
+// disproportionate amount of the work separating "3D tech demo" from "game" — it
+// focuses the eye centrally and hides the flat falloff at the screen border.
+const VignetteShader = {
+  uniforms: {
+    tDiffuse: { value: null },
+    strength: { value: 0.85 },
+    softness: { value: 0.55 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform float strength;
+    uniform float softness;
+    varying vec2 vUv;
+    void main() {
+      vec4 color = texture2D(tDiffuse, vUv);
+      // distance from centre, normalised so corners sit near 1.0
+      float d = distance(vUv, vec2(0.5)) * 1.414;
+      float v = smoothstep(1.0, softness, d);
+      color.rgb *= mix(1.0, v, strength);
+      gl_FragColor = color;
+    }
+  `,
+};
 
 /** Builds a THREE.Group for a single prop entry from the model's scene.props array. */
 // Chooses where the player opens the scene. A fixed spawn regularly put a wall or a
@@ -97,172 +129,69 @@ function chooseVantage(props) {
   return { position: best || fallback, target };
 }
 
-function buildProp(prop, mood) {
+// Placeholder geometry, shown until the prop's generated artwork arrives and used
+// permanently if generation is unavailable. There is no prop-type vocabulary any more,
+// so the shape comes from the object's `form` — how it occupies space — which is the
+// only thing the renderer can know before it has seen the art.
+function buildProp(prop, palette) {
   const group = new THREE.Group();
-  const tint = moodTintColor(mood);
   const scale = prop.scale && prop.scale > 0 ? prop.scale : 1;
+  const base = palette?.ground || new THREE.Color(0x8a8578);
 
-  const stoneMat = () => new THREE.MeshStandardMaterial({ color: 0x8a8578, roughness: 0.9 });
-  const woodMat = () => new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 0.85 });
+  const mat = (lighten) =>
+    new THREE.MeshStandardMaterial({
+      color: base.clone().lerp(new THREE.Color(0xffffff), lighten),
+      roughness: 0.9,
+    });
 
-  switch (prop.type) {
-    case "tree": {
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.22, 1.5, 7), woodMat());
-      trunk.position.y = 0.75;
-      const topColor = new THREE.Color(0x2e6b3a).lerp(tint, 0.15);
-      // Three stacked, slightly rotated tiers read as foliage; one cone reads as a party hat.
-      const foliageMat = new THREE.MeshStandardMaterial({ color: topColor, roughness: 0.85 });
-      foliageMat.userData.foliage = true;
-      group.add(trunk);
-      const tiers = [
-        { y: 1.7, r: 1.0, h: 1.1 },
-        { y: 2.3, r: 0.78, h: 1.0 },
-        { y: 2.85, r: 0.52, h: 0.85 },
-      ];
-      for (const [i, t] of tiers.entries()) {
-        const cone = new THREE.Mesh(new THREE.ConeGeometry(t.r, t.h, 8), foliageMat);
-        cone.position.y = t.y;
-        cone.rotation.y = i * 0.4;
-        cone.userData.noTexture = true; // bark texture on leaves looks wrong
-        group.add(cone);
-      }
+  switch (prop.form) {
+    case "tall": {
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.36, 3, 8), mat(0.25));
+      shaft.position.y = 1.5;
+      group.add(shaft);
       break;
     }
-    case "rock": {
-      // Jitter the vertices so rocks aren't identical faceted balls.
-      const geo = new THREE.IcosahedronGeometry(0.6, 1);
-      const pos = geo.attributes.position;
-      for (let i = 0; i < pos.count; i++) {
-        const f = 0.78 + Math.random() * 0.44;
-        pos.setXYZ(i, pos.getX(i) * f, pos.getY(i) * f * 0.8, pos.getZ(i) * f);
-      }
-      geo.computeVertexNormals();
-      const rock = new THREE.Mesh(geo, stoneMat());
-      rock.position.y = 0.38;
-      rock.rotation.set(Math.random(), Math.random(), Math.random());
-      group.add(rock);
-      break;
-    }
-    case "pillar": {
-      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.4, 3, 8), stoneMat());
-      pillar.position.y = 1.5;
-      group.add(pillar);
-      break;
-    }
-    case "wall": {
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(3, 1.8, 0.3), stoneMat());
-      wall.position.y = 0.9;
-      group.add(wall);
-      break;
-    }
-    case "structure": {
-      const base = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 2.2), stoneMat());
-      base.position.y = 0.8;
-      const roof = new THREE.Mesh(
-        new THREE.ConeGeometry(1.7, 1.1, 4),
-        new THREE.MeshStandardMaterial({ color: 0x5a3a2a, roughness: 0.8 })
-      );
-      roof.position.y = 2.15;
-      roof.rotation.y = Math.PI / 4;
-      group.add(base, roof);
-      break;
-    }
-    case "water": {
-      const plane = new THREE.Mesh(
-        new THREE.CircleGeometry(1.6, 20),
-        new THREE.MeshStandardMaterial({
-          color: 0x2e6f8e,
-          transparent: true,
-          opacity: 0.75,
-          roughness: 0.2,
-          metalness: 0.1,
-        })
-      );
-      plane.rotation.x = -Math.PI / 2;
-      plane.position.y = 0.02;
-      group.add(plane);
-      break;
-    }
-    case "torch": {
-      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.2, 6), woodMat());
-      stick.position.y = 0.6;
-      const flame = new THREE.Mesh(
-        new THREE.SphereGeometry(0.14, 8, 8),
-        new THREE.MeshStandardMaterial({ color: 0xffa23c, emissive: 0xff8c1a, emissiveIntensity: 1.5 })
-      );
-      flame.position.y = 1.25;
-      flame.userData.noTexture = true; // charred-wood texture on a flame reads as a rock
-      group.add(stick, flame);
-      group.userData.flameLight = true;
-      break;
-    }
-    case "npc": {
-      const body = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.35, 1.1, 4, 8),
-        new THREE.MeshStandardMaterial({ color: 0x3a8a8a, roughness: 0.6 })
-      );
-      body.position.y = 1;
+    case "wide": {
+      // Architectural: keeps real geometry rather than becoming a billboard, since the
+      // player can walk around it.
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.2, 1.6), mat(0.18));
+      body.position.y = 1.1;
       group.add(body);
       break;
     }
-    case "item": {
-      // Items are the thing the player is meant to notice, so they get a faceted gem
-      // plus a glow and a ground halo rather than a plain floating blob.
-      const gem = new THREE.Mesh(
-        new THREE.OctahedronGeometry(0.32, 1),
+    case "humanoid": {
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 1.05, 4, 8), mat(0.35));
+      body.position.y = 0.95;
+      group.add(body);
+      break;
+    }
+    case "flat": {
+      const plane = new THREE.Mesh(
+        new THREE.CircleGeometry(1.3, 20),
         new THREE.MeshStandardMaterial({
-          color: 0xf0c850,
-          emissive: 0xc08a10,
-          emissiveIntensity: 0.7,
-          metalness: 0.65,
+          color: base.clone().lerp(new THREE.Color(0x2e6f8e), 0.5),
           roughness: 0.25,
-        })
-      );
-      gem.position.y = 0.95;
-      const halo = new THREE.Mesh(
-        new THREE.RingGeometry(0.3, 0.46, 20),
-        new THREE.MeshBasicMaterial({
-          color: 0xffd98a,
+          metalness: 0.1,
           transparent: true,
-          opacity: 0.35,
-          side: THREE.DoubleSide,
+          opacity: 0.85,
         })
       );
-      halo.rotation.x = -Math.PI / 2;
-      halo.position.y = 0.05;
-      halo.userData.noTexture = true;
-      group.add(gem, halo);
-      // Deliberately no bob: items render as real objects (a chest, a relic) that rest
-      // on the ground. Hovering is what made them read as floating dots.
+      plane.rotation.x = -Math.PI / 2;
+      plane.position.y = 0.03;
+      group.add(plane);
       break;
     }
-    case "altar": {
-      const base = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 1.4), stoneMat());
-      base.position.y = 0.2;
-      const top = new THREE.Mesh(new THREE.BoxGeometry(1, 0.5, 1), stoneMat());
-      top.position.y = 0.65;
-      group.add(base, top);
-      break;
-    }
-    case "crate": {
-      const crate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), woodMat());
-      crate.position.y = 0.4;
-      group.add(crate);
-      break;
-    }
+    case "small":
     default: {
-      const fallback = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6), stoneMat());
-      fallback.position.y = 0.3;
-      group.add(fallback);
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), mat(0.22));
+      box.position.y = 0.35;
+      group.add(box);
+      break;
     }
   }
 
   group.scale.setScalar(scale);
   group.position.set(prop.x || 0, 0, prop.z || 0);
-
-  // Labels used to hang over every prop as floating text, which read as debug overlay
-  // and cluttered the view. The label now surfaces only for whatever the player is
-  // actually looking at (see _updateFocus), so it's information on demand.
 
   group.traverse((obj) => {
     if (obj.isMesh) {
@@ -271,14 +200,15 @@ function buildProp(prop, mood) {
     }
   });
 
-  // Three tiers, best-effort and in order: a real 3D model if one has been generated,
-  // otherwise billboarded artwork, otherwise the primitive geometry built above with a
-  // material texture on it. Each upgrade happens in place when it arrives, so the prop
-  // is visible immediately and never blocks on the network.
+  // Three tiers, best-effort and in order: a real 3D model, else billboarded artwork,
+  // else this primitive with a generated surface texture on it. Architectural forms skip
+  // the billboard tier because a flat card fails when you walk around it.
   (async () => {
-    if (await attachModel(group, prop.type)) return;
-    if (SPRITE_TYPES.has(prop.type)) await attachSprite(group, prop.type, prop.label);
-    else applyPropTexture(group, prop.type);
+    if (await attachModel(group, prop.label, prop.form)) return;
+    if (!GEOMETRIC_FORMS.has(prop.form)) {
+      if (await attachSprite(group, prop.form, prop.label)) return;
+    }
+    applyPropTexture(group, prop.label);
   })();
 
   return group;
@@ -354,6 +284,8 @@ export class Scene3D {
     this.sun.shadow.bias = -0.0006; // kills shadow acne on the displaced terrain
     this.scene.add(this.ambient, this.sun);
 
+    this._initPostProcessing(w, h);
+
     this.worldGroup = new THREE.Group();
     this.scene.add(this.worldGroup);
 
@@ -370,7 +302,34 @@ export class Scene3D {
     this._seed = 1;
     this._bobPhase = 0;
     this._lightsUsed = 0;
-    this._mood = "serene";
+    this._palette = null;
+  }
+
+  // Bloom + anti-aliasing + vignette. Bloom is what makes torches, sunlit foliage and
+  // the item glow read as light rather than as bright paint, and is most of the
+  // difference between "objects rendered in a scene" and "a game".
+  _initPostProcessing(w, h) {
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+
+    this.bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(w, h),
+      0.55, // strength — enough to glow, low enough not to wash the scene out
+      0.7, // radius
+      0.75 // threshold: only genuinely bright pixels bloom, not every lit surface
+    );
+    this.composer.addPass(this.bloomPass);
+
+    this.vignettePass = new ShaderPass(VignetteShader);
+    this.composer.addPass(this.vignettePass);
+
+    // EffectComposer renders to a render target, which bypasses the renderer's own
+    // MSAA — without this the whole scene comes back visibly jagged.
+    this.composer.addPass(new SMAAPass(w, h));
+
+    // Applies tone mapping and colour space conversion at the end of the chain, where
+    // it belongs once post-processing is involved.
+    this.composer.addPass(new OutputPass());
   }
 
   _initControls() {
@@ -383,6 +342,9 @@ export class Scene3D {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    // The composer owns its own render targets and doesn't track the renderer's size.
+    this.composer?.setSize(w, h);
+    this.bloomPass?.setSize(w, h);
   }
 
   _disposeObject(obj) {
@@ -408,6 +370,9 @@ export class Scene3D {
     this._sceneToken++;
 
     this._seed = seedFromScene(scene);
+    const env = scene.environment;
+    const palette = paletteOf(env);
+    this._palette = palette;
     // Picked before the scatter is built so clutter can be kept off the spawn point.
     const vantage = chooseVantage(scene.props);
 
@@ -427,8 +392,9 @@ export class Scene3D {
     }
     groundGeo.computeVertexNormals();
 
+    // Flat palette colour until the generated ground texture arrives.
     const groundMat = new THREE.MeshStandardMaterial({
-      map: groundTexture(scene.biome, scene.mood),
+      color: palette.ground,
       roughness: 1,
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);
@@ -447,24 +413,22 @@ export class Scene3D {
     this._loadGeneratedGround(scene, groundMat);
 
     this._lightsUsed = 0;
-    this._mood = scene.mood;
-    for (const prop of scene.props || []) this._addProp(prop, scene.mood);
+    for (const prop of scene.props || []) this._addProp(prop);
 
-    const sky = skyColor(scene.mood, scene.time_of_day);
-    this.scene.background = sky;
-    this.scene.fog.color = sky.clone();
-    const [fogNear, fogFar] = fogRange(scene.mood, scene.time_of_day);
-    this.scene.fog.near = fogNear;
-    this.scene.fog.far = fogFar;
+    // Every value here is authored by the model for this specific place, so two scenes
+    // only look alike if they were described alike.
+    this.scene.background = palette.fog.clone();
+    this.scene.fog.color = palette.fog.clone();
+    const fog = fogOf(env);
+    this.scene.fog.near = fog.near;
+    this.scene.fog.far = fog.far;
 
-    // Sun angle and colour do most of the work of communicating time of day; a fixed
-    // overhead light made dawn, dusk and night differ only by sky tint.
-    const sun = sunSetup(scene.time_of_day);
-    this.sun.position.set(...sun.position);
-    this.sun.color.set(sun.color);
-    this.sun.intensity = sunIntensity(scene.time_of_day);
-    this.ambient.color.set(sun.ambient);
-    this.ambient.intensity = ambientIntensity(scene.time_of_day);
+    const lighting = lightingOf(env);
+    this.sun.position.set(12, lighting.sunHeight, 10);
+    this.sun.color.copy(palette.light);
+    this.sun.intensity = lighting.sun;
+    this.ambient.color.copy(palette.ambient);
+    this.ambient.intensity = lighting.ambient;
     this._loadGeneratedSky(scene);
 
     // Open on a vantage with a clear view of the scene, rather than a fixed point that
@@ -476,10 +440,14 @@ export class Scene3D {
       position.z
     );
     this.camera.lookAt(target.x, this.camera.position.y, target.z);
+    // The choice panel occupies the bottom of the screen, so a perfectly level camera
+    // spends most of the *visible* area on sky and hides the world behind the UI.
+    // Pitching down compensates, putting the ground and props in the readable region.
+    this.camera.rotateX(-OPENING_PITCH);
   }
 
-  _addProp(prop, mood) {
-    const group = buildProp(prop, mood ?? this._mood);
+  _addProp(prop) {
+    const group = buildProp(prop, this._palette);
     group.userData.propId = prop.id;
     group.position.y = heightAt(prop.x, prop.z, this._seed);
     this.worldGroup.add(group);
@@ -515,13 +483,12 @@ export class Scene3D {
    * Moves are animated (see _animate) rather than snapped, so the change is legible
    * as a change rather than reading as a new scene.
    */
-  applyDelta(delta, mood) {
+  applyDelta(delta) {
     if (!delta) return;
-    if (mood) this._mood = mood;
 
     for (const prop of delta.add || []) {
       if (this.propsById.has(prop.id)) this._removeProp(prop.id);
-      const group = this._addProp(prop, this._mood);
+      const group = this._addProp(prop);
       // fade/pop in so appearing objects read as arriving, not as always-having-been
       group.scale.multiplyScalar(0.01);
       this.dynamicProps.push({
@@ -680,10 +647,9 @@ export class Scene3D {
   async _loadGeneratedSky(scene) {
     const token = this._sceneToken;
     const params = new URLSearchParams({
-      biome: scene.biome,
-      mood: scene.mood,
-      time_of_day: scene.time_of_day,
       kind: "sky",
+      label: scene.environment?.description || "an open sky",
+      light_level: String(scene.environment?.light_level ?? 0.7),
     });
 
     try {
@@ -704,7 +670,7 @@ export class Scene3D {
       this.scene.background = tex;
       // Fog must stay a colour, not the texture — keep it matched to the sky's mood so
       // distant geometry still fades into the horizon instead of standing out against it.
-      this.scene.fog.color = skyColor(scene.mood, scene.time_of_day);
+      this.scene.fog.color = this._palette.fog.clone();
     } catch {
       // keep the procedural sky colour
     }
@@ -716,9 +682,8 @@ export class Scene3D {
     // wrong world (or onto a material that's since been disposed).
     const token = this._sceneToken;
     const params = new URLSearchParams({
-      biome: scene.biome,
-      mood: scene.mood,
-      time_of_day: scene.time_of_day,
+      kind: "ground",
+      label: scene.environment?.ground_cover || "worn stone",
       kind: "ground",
     });
 
@@ -752,7 +717,7 @@ export class Scene3D {
   // the player can stand on/over them; everything else pushes back.
   _blocked(x, z) {
     for (const { prop } of this.propsById.values()) {
-      if (PASSABLE_PROPS.has(prop.type)) continue;
+      if (PASSABLE_FORMS.has(prop.form)) continue;
       const r = COLLISION_RADIUS * (prop.scale && prop.scale > 0 ? prop.scale : 1);
       const dx = x - prop.x;
       const dz = z - prop.z;
@@ -867,7 +832,7 @@ export class Scene3D {
       this.dynamicProps = this.dynamicProps.filter((p) => p.kind === "bob" || p.t < 1);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   }
 
   dispose() {

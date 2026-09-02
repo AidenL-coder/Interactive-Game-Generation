@@ -28,15 +28,12 @@ function cacheKey(biome, mood, timeOfDay, kind, propType, label) {
   // Prop materials are keyed by type alone, not by biome/mood/time: bark is bark
   // regardless of the weather. 11 prop types => 11 generations, ever. Keying them by
   // scene context instead would multiply that by ~200 for no visible benefit.
-  // Material textures stay keyed by type: bark is bark regardless of which tree it's
-  // wrapped around, so per-label variants would be pure waste.
-  if (kind === "prop") return `prop_${propType}.img`;
-  // Object sprites key on the label, falling back to the type when a prop has none.
-  if (kind === "sprite") {
-    const key = labelKey(label);
-    return key ? `sprite_${propType}_${key}.img` : `sprite_${propType}.img`;
-  }
-  return `${kind}_${biome}_${mood}_${timeOfDay}.img`;
+  // Everything is keyed by what it actually depicts, so two worlds that describe
+  // themselves differently get genuinely different art rather than sharing a preset.
+  const key = labelKey(label);
+  if (kind === "prop") return `prop_${key || propType || "generic"}.img`;
+  if (kind === "sprite") return `sprite_${key || propType || "generic"}.img`;
+  return `${kind}_${key || "default"}.img`;
 }
 
 // Material description per prop type. These are surface textures tiled onto the
@@ -124,8 +121,14 @@ function spritePrompt(propType, label) {
   );
 }
 
-function propPrompt(propType) {
-  const material = PROP_MATERIAL_PROMPTS[propType] || "rough grey stone surface";
+// Surface material for architectural props, which keep real geometry rather than being
+// billboarded. Generated from the object's own description so a "rusted bulkhead" and a
+// "lichen-stained abbey wall" get different surfaces.
+function propPrompt(propType, label) {
+  const described = sanitizeLabel(label);
+  const material = described
+    ? `the surface material of ${described}`
+    : PROP_MATERIAL_PROMPTS[propType] || "rough grey stone surface";
   return (
     `A seamless, tileable material texture: ${material}. ` +
     "Flat lay, evenly lit, photographed straight on, filling the entire frame. " +
@@ -153,38 +156,48 @@ function sniffImageType(buffer) {
 // turn, and without this each would fire its own (slow, paid) generation call.
 const inFlight = new Map();
 
-function groundPrompt(biome, mood, timeOfDay) {
+// Ground and sky are generated from the scene's authored description rather than a
+// biome enum, so "drowned cathedral nave" and "orbital hydroponics bay" produce their
+// own surfaces instead of both being forced into the nearest of eight presets.
+export function describedGroundPrompt(groundCover, description) {
+  const surface = sanitizeLabel(groundCover) || "worn grey stone";
+  const place = sanitizeLabel(description);
   return (
-    `A seamless, tileable top-down texture of ${biome} ground terrain. ` +
-    `Mood: ${mood}. Lighting: ${timeOfDay}. ` +
-    "Photorealistic game texture, evenly lit, no shadows cast across it, no objects, " +
-    "no horizon, no sky, no text. Flat overhead view of the ground surface only, " +
-    "edges must tile seamlessly. Square 1:1 aspect ratio, filling the entire frame."
+    `A seamless, tileable ground texture: ${surface}` +
+    (place ? `, from ${place}` : "") +
+    ". Photorealistic game texture, evenly lit, no shadows cast across it, no objects, " +
+    "no horizon, no sky, no text. Flat overhead view of the ground surface only. " +
+    "Square 1:1 aspect ratio, edges must tile seamlessly."
   );
 }
 
-function skyPrompt(biome, mood, timeOfDay) {
-  // Sky ONLY. An earlier version asked for a "horizon backdrop above {biome} terrain"
-  // and got cliffs and rocks — which, wrapped equirectangularly onto the scene
-  // background, appeared as dark landmasses hanging directly overhead.
+export function describedSkyPrompt(description, lightLevel) {
+  const place = sanitizeLabel(description) || "an open landscape";
+  const brightness =
+    lightLevel >= 0.75 ? "bright daylight" : lightLevel >= 0.4 ? "dim overcast light" : "deep darkness";
   return (
-    `A ${timeOfDay} sky, ${mood} in feeling, seen looking straight up and around: ` +
-    "clouds and open sky filling the entire frame. " +
-    "ABSOLUTELY NO ground, NO terrain, NO horizon line, NO mountains, NO trees, " +
-    "NO buildings, NO birds, NO text — nothing but sky and cloud. " +
-    "Seamless 360-degree equirectangular panorama, wide 2:1 aspect ratio, " +
-    "painterly digital matte painting."
+    `The sky and upper distance as seen from inside ${place}, in ${brightness}. ` +
+    "Fills the entire frame. NO ground, NO terrain, NO horizon line, NO buildings, " +
+    "NO text — only what is overhead. Seamless 360-degree equirectangular panorama, " +
+    "wide 2:1 aspect ratio, painterly digital matte painting."
   );
 }
 
 /**
  * Returns `{ buffer, contentType }` for a scene texture, generating via Gemini on a
- * cache miss. `kind` is "ground" | "sky".
+ * cache miss.
+ *
+ * @param {object} args
+ * @param {"ground"|"sky"|"prop"|"sprite"} args.kind
+ * @param {string} args.label - what the texture depicts; for ground/sky this is the
+ *   scene's authored description, for props/sprites the object's own label. All art is
+ *   generated from description rather than from a fixed set of presets.
+ * @param {number} [args.lightLevel] - 0-1, used to pitch sky brightness.
  */
-export async function getTexture({ biome, mood, timeOfDay, kind = "ground", propType, label }) {
+export async function getTexture({ kind = "ground", propType, label, lightLevel = 0.7 }) {
   if (!textureGenEnabled) throw new Error("texture generation disabled (no API key)");
 
-  const key = cacheKey(biome, mood, timeOfDay, kind, propType, label);
+  const key = cacheKey(null, null, null, kind, propType, label);
   const cachePath = path.join(CACHE_DIR, key);
 
   try {
@@ -199,12 +212,12 @@ export async function getTexture({ biome, mood, timeOfDay, kind = "ground", prop
   const job = (async () => {
     const prompt =
       kind === "sky"
-        ? skyPrompt(biome, mood, timeOfDay)
+        ? describedSkyPrompt(label, lightLevel)
         : kind === "prop"
-          ? propPrompt(propType)
+          ? propPrompt(propType, label)
           : kind === "sprite"
             ? spritePrompt(propType, label)
-            : groundPrompt(biome, mood, timeOfDay);
+            : describedGroundPrompt(label, label);
 
     const startedAt = Date.now();
     const interaction = await ai.interactions.create({ model: MODEL, input: prompt });

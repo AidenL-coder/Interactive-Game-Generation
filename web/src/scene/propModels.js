@@ -16,26 +16,17 @@ const cache = new Map();
 
 // Target height in world units per prop type. Generated models arrive at arbitrary
 // scale, so each is normalised to its bounding box and then scaled to these.
-const MODEL_HEIGHT = {
-  tree: 3.6,
-  npc: 1.85,
-  item: 0.7,
-  altar: 1.3,
-  crate: 0.9,
-  torch: 1.9,
-  rock: 1.0,
-  pillar: 3.0,
-  wall: 1.8,
-  structure: 2.6,
-};
+// Sizing comes from the prop's form, shared with the sprite path so a model and a
+// billboard of the same object are the same size.
+import { FORM_HEIGHT } from "iwg-shared";
 
 /** Resolves to a THREE.Object3D template for a prop type, or null if unavailable. */
-export function propModel(type) {
-  if (cache.has(type)) return cache.get(type);
+export function propModel(description, loadHeight) {
+  if (cache.has(description)) return cache.get(description);
 
   const job = (async () => {
     try {
-      const res = await fetch(`${API_BASE}/model?type=${encodeURIComponent(type)}`);
+      const res = await fetch(`${API_BASE}/model?type=${encodeURIComponent(description)}`);
       if (!res.ok) return null; // 503 = generation disabled, 404 = none for this type
 
       const buffer = await res.arrayBuffer();
@@ -49,7 +40,7 @@ export function propModel(type) {
       const size = new THREE.Vector3();
       box.getSize(size);
       const height = size.y || 1;
-      const scale = (MODEL_HEIGHT[type] || 1.5) / height;
+      const scale = (loadHeight || 1.5) / height;
       root.scale.setScalar(scale);
 
       const scaled = new THREE.Box3().setFromObject(root);
@@ -68,12 +59,12 @@ export function propModel(type) {
 
       return root;
     } catch (err) {
-      console.warn(`[propModels] ${type} unavailable:`, err?.message || err);
+      console.warn(`[propModels] "${description}" unavailable:`, err?.message || err);
       return null;
     }
   })();
 
-  cache.set(type, job);
+  cache.set(description, job);
   return job;
 }
 
@@ -81,8 +72,8 @@ export function propModel(type) {
  * Replaces a prop's placeholder geometry with a real 3D model once it loads.
  * @returns {Promise<boolean>} whether a model was attached
  */
-export async function attachModel(group, type) {
-  const template = await propModel(type);
+export async function attachModel(group, description, form) {
+  const template = await propModel(description, FORM_HEIGHT[form]);
   // The prop may have been removed by a delta while the model was in flight.
   if (!template || !group.parent) return false;
 

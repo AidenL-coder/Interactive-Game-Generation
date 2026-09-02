@@ -2,24 +2,12 @@ import * as THREE from "three";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
-// Prop types rendered as billboarded generated artwork rather than primitive geometry.
-// Discrete, organic, or detailed objects only — architectural pieces (wall, pillar,
-// structure) stay as geometry, since you walk right up to and around those and a flat
-// card would give the illusion away immediately.
-export const SPRITE_TYPES = new Set(["tree", "npc", "item", "altar", "crate", "torch", "rock"]);
-
-// World height in units for each sprite, so a chest doesn't render as tall as a tree.
-const SPRITE_HEIGHT = {
-  // Trees at 4.2 dominated the frame from a 1.7-unit eye height; 3.4 still reads as a
-  // mature tree without three of them swallowing the whole view.
-  tree: 3.4,
-  npc: 1.85,
-  item: 0.9,
-  altar: 1.3,
-  crate: 0.9,
-  torch: 1.9,
-  rock: 1.1,
-};
+// Props are billboarded generated artwork unless their form is architectural — you walk
+// right up to and around a wall or a building, where a flat card gives itself away.
+// Sizing comes from the prop's form rather than a per-type table, since there is no
+// fixed set of types any more; FORM_HEIGHT lives in the shared schema so the renderer
+// and the model agree on what "tall" means.
+import { FORM_HEIGHT } from "iwg-shared";
 
 const cache = new Map();
 
@@ -33,6 +21,12 @@ const EDGE_SOFTNESS = 85;
 // than backdrop bleed, so leave it alone.
 const DESPILL_THRESHOLD = 22;
 
+// If the model ignored the magenta-backdrop instruction, keying removes almost nothing
+// and the sprite renders as a raw rectangle floating in the world — a framed picture
+// hanging in mid-air. Below this share of keyed-out pixels we treat the generation as
+// unusable and fall back to geometry, which is wrong-looking but not obviously broken.
+const MIN_KEYED_FRACTION = 0.12;
+
 function chromaKeyToCanvas(bitmap) {
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
@@ -42,6 +36,7 @@ function chromaKeyToCanvas(bitmap) {
 
   const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const d = img.data;
+  let keyed = 0;
   for (let i = 0; i < d.length; i += 4) {
     const r = d[i];
     const g = d[i + 1];
@@ -54,6 +49,7 @@ function chromaKeyToCanvas(bitmap) {
 
     if (dist < KEY_DISTANCE) {
       d[i + 3] = 0;
+      keyed++;
       continue;
     }
     if (dist < KEY_DISTANCE + EDGE_SOFTNESS) {
@@ -73,7 +69,8 @@ function chromaKeyToCanvas(bitmap) {
     }
   }
   ctx.putImageData(img, 0, 0);
-  return canvas;
+  const keyedFraction = keyed / (canvas.width * canvas.height);
+  return { canvas, keyedFraction };
 }
 
 // Trims fully-transparent margin so the object sits on the ground rather than floating
@@ -117,7 +114,16 @@ export function propSprite(type, label) {
       if (label) params.set("label", label);
       const res = await fetch(`${API_BASE}/texture?${params}`);
       if (!res.ok) return null;
-      const trimmed = trimTransparent(chromaKeyToCanvas(await createImageBitmap(await res.blob())));
+
+      const { canvas, keyedFraction } = chromaKeyToCanvas(await createImageBitmap(await res.blob()));
+      if (keyedFraction < MIN_KEYED_FRACTION) {
+        console.warn(
+          `[propSprites] discarding "${label || type}" — only ${(keyedFraction * 100).toFixed(1)}% ` +
+            "keyed out, so the backdrop wasn't magenta and this would render as a rectangle"
+        );
+        return null;
+      }
+      const trimmed = trimTransparent(canvas);
 
       const texture = new THREE.CanvasTexture(trimmed);
       texture.colorSpace = THREE.SRGBColorSpace;
@@ -176,12 +182,12 @@ function contactShadow(width) {
  * The geometry stays until then, so the scene is never empty while waiting — and stays
  * permanently if generation is unavailable.
  */
-export async function attachSprite(group, type, label) {
-  const loaded = await propSprite(type, label);
+export async function attachSprite(group, form, label) {
+  const loaded = await propSprite(form, label);
   // The prop may have been removed by a delta while its artwork was in flight.
-  if (!loaded || !group.parent) return;
+  if (!loaded || !group.parent) return false;
 
-  const height = SPRITE_HEIGHT[type] || 1.5;
+  const height = FORM_HEIGHT[form] || 1.5;
   const material = new THREE.SpriteMaterial({
     map: loaded.texture,
     transparent: true,
@@ -199,4 +205,5 @@ export async function attachSprite(group, type, label) {
   // prop's collision footprint and the delta tweens animate the group as a whole.
   for (const child of [...group.children]) child.visible = false;
   group.add(contactShadow(height * loaded.aspect * 0.7), sprite);
+  return true;
 }

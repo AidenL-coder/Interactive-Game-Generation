@@ -1,8 +1,4 @@
 import {
-  BIOMES,
-  MOODS,
-  TIMES_OF_DAY,
-  PROP_TYPES,
   GROUND_HALF_EXTENT,
   MIN_PROPS,
   MAX_PROPS,
@@ -62,27 +58,52 @@ const CHOICE_TEMPLATES = [
  * @param {object|null} args.lastWorldState
  * @returns {{worldState: object, newHistory: [], usage: null, latencyMs: number}}
  */
+// Canned vocabulary for the non-LLM baseline. Kept deliberately fixed and small: this
+// condition exists to represent "template-driven generation", which is the thing the
+// LLM path is being measured against.
+const BASELINE_PLACES = ["forest", "desert", "ruin", "cavern", "shoreline", "snowfield"];
+const BASELINE_MOODS = ["quiet", "tense", "bleak", "still"];
+const BASELINE_TIMES = ["dawn", "day", "dusk", "night"];
+const BASELINE_GROUND = ["packed dirt and gravel", "cracked flagstones", "coarse grass", "dry sand"];
+const BASELINE_PALETTES = [
+  { ground: "#6b6459", fog: "#9aa0a6", light: "#fff4e0", ambient: "#b9c3cc", scatter: "#5f6b45" },
+  { ground: "#3a4230", fog: "#6b7a6b", light: "#e8f0d8", ambient: "#8fa08f", scatter: "#4c5640" },
+  { ground: "#c2a15c", fog: "#d8c9a0", light: "#fff0d0", ambient: "#c8bfa8", scatter: "#a89253" },
+];
+const BASELINE_PROPS = [
+  { label: "a weathered standing stone", form: "tall" },
+  { label: "a low crumbling wall", form: "wide" },
+  { label: "a wooden crate", form: "small" },
+  { label: "a silent hooded figure", form: "humanoid" },
+  { label: "a shallow pool of water", form: "flat" },
+  { label: "a mossy boulder", form: "small" },
+];
+
 export function generateTemplateScene({ profile, ablation, turnMessage, lastWorldState }) {
   const startedAt = Date.now();
 
   const seed = hashString((turnMessage || "") + JSON.stringify(lastWorldState?.scene || {}));
   const rng = seededRng(seed);
 
-  const biome = pick(rng, BIOMES);
-  const mood = pick(rng, MOODS);
-  const time_of_day = pick(rng, TIMES_OF_DAY);
+  // This baseline is deliberately the template condition — a fixed vocabulary drawn at
+  // random, which is exactly what the LLM path no longer does. It exists to be compared
+  // against, so it keeps its canned word lists on purpose.
+  const biome = pick(rng, BASELINE_PLACES);
+  const mood = pick(rng, BASELINE_MOODS);
+  const time_of_day = pick(rng, BASELINE_TIMES);
   const name = ablation?.personalization ? profile?.name || "the traveler" : "the traveler";
   const interest = ablation?.personalization ? (profile?.interests || []).filter(Boolean)[0] : null;
 
   const propCount = MIN_PROPS + Math.floor(rng() * (MAX_PROPS - MIN_PROPS + 1));
   const props = Array.from({ length: propCount }, (_, i) => {
-    const type = pick(rng, PROP_TYPES);
+    const thing = pick(rng, BASELINE_PROPS);
     return {
       // Ids are required by the schema now. The baseline has no notion of persistence
       // (every turn is independent), so these are unique-per-turn rather than stable
       // across turns — which is itself the honest representation of this baseline.
-      id: `tpl_${type}_${i}`,
-      type,
+      id: `tpl_${i}`,
+      label: thing.label,
+      form: thing.form,
       x: Math.round((rng() * 2 - 1) * GROUND_HALF_EXTENT * 0.9),
       z: Math.round((rng() * 2 - 1) * GROUND_HALF_EXTENT * 0.9),
       scale: Math.round((0.6 + rng() * 1.2) * 10) / 10,
@@ -104,7 +125,22 @@ export function generateTemplateScene({ profile, ablation, turnMessage, lastWorl
     .slice(0, choiceCount)
     .map((text, i) => ({ id: `template_choice_${i}`, text }));
 
-  const worldState = { narrative, scene: { biome, mood, time_of_day, props }, choices };
+  const worldState = {
+    narrative,
+    scene: {
+      environment: {
+        description: `a ${mood} ${biome} at ${time_of_day}`,
+        ground_cover: pick(rng, BASELINE_GROUND),
+        palette: pick(rng, BASELINE_PALETTES),
+        light_level: time_of_day === "night" ? 0.25 : time_of_day === "day" ? 0.9 : 0.55,
+        visibility: 0.6,
+        scatter_density: 0.4,
+        scatter_cover: "scrub and loose stones",
+      },
+      props,
+    },
+    choices,
+  };
 
   return { worldState, newHistory: [], usage: null, latencyMs: Date.now() - startedAt };
 }

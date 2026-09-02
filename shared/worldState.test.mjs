@@ -12,11 +12,23 @@ function check(name, cond, extra = "") {
 
 function props(n, prefix = "p") {
   return Array.from({ length: n }, (_, i) => ({
-    id: `${prefix}${i}`, type: "rock", x: i, z: 0,
+    id: `${prefix}${i}`, label: "a mossy boulder", form: "small", x: i, z: 0,
   }));
 }
 const choices = [{ id: "a", text: "A" }, { id: "b", text: "B" }];
-const baseScene = { biome: "forest", mood: "serene", time_of_day: "day", props: props(6) };
+
+// There is no biome/mood/time vocabulary any more — the model authors the environment,
+// so the tests assert structure (present, in range, parseable colours) rather than
+// membership of a fixed list.
+const environment = {
+  description: "a drowned cathedral nave lit by green water-light",
+  ground_cover: "silted flagstones under shallow water",
+  palette: { ground: "#3a4a52", fog: "#1e2a30", light: "#a8d8c0", ambient: "#405a64" },
+  light_level: 0.4,
+  visibility: 0.5,
+  scatter_density: 0.3,
+};
+const baseScene = { environment, props: props(6) };
 
 console.log("\n--- validateWorldState (full scene) ---");
 {
@@ -24,13 +36,13 @@ console.log("\n--- validateWorldState (full scene) ---");
   check("valid full scene passes", r.valid, JSON.stringify(r.violations));
 }
 {
-  const dup = { ...baseScene, props: [...props(5), { id: "p0", type: "rock", x: 1, z: 1 }] };
+  const dup = { ...baseScene, props: [...props(5), { id: "p0", label: "a stone", form: "small", x: 1, z: 1 }] };
   const r = validateWorldState({ narrative: "hi", scene: dup, choices });
   check("duplicate id rejected", !r.valid);
   check("duplicate counted in spatial", r.spatial.duplicateIds === 1, JSON.stringify(r.spatial));
 }
 {
-  const oob = { ...baseScene, props: [...props(5), { id: "zz", type: "rock", x: 999, z: 0 }] };
+  const oob = { ...baseScene, props: [...props(5), { id: "zz", label: "a stone", form: "small", x: 999, z: 0 }] };
   const r = validateWorldState({ narrative: "hi", scene: oob, choices });
   check("out-of-bounds counted", r.spatial.outOfBounds === 1, JSON.stringify(r.spatial));
 }
@@ -76,12 +88,12 @@ const known = ["p0", "p1", "p2", "p3", "p4", "p5"];
 }
 {
   const r = validateDeltaTurn({ narrative: "n", choices,
-    scene_delta: { add: [{ id: "p0", type: "tree", x: 1, z: 1 }] } }, known);
+    scene_delta: { add: [{ id: "p0", label: "a tree", form: "tall", x: 1, z: 1 }] } }, known);
   check("add with colliding id rejected", !r.valid);
 }
 {
   const r = validateDeltaTurn({ narrative: "n", choices,
-    scene_delta: { add: [{ id: "new1", type: "tree", x: 1, z: 1 }] },
+    scene_delta: { add: [{ id: "new1", label: "a tree", form: "tall", x: 1, z: 1 }] },
     agent_actions: [{ type: "walk_to", target_id: "new1" }] }, known);
   check("action can target prop added same turn", r.valid, JSON.stringify(r.violations));
 }
@@ -123,15 +135,15 @@ const known = ["p0", "p1", "p2", "p3", "p4", "p5"];
 }
 {
   const r = validateDeltaTurn({ narrative: "n", choices,
-    scene_delta: { ambient: { mood: "banana" } } }, known);
-  check("bad ambient mood rejected", !r.valid);
+    scene_delta: { ambient: { light_level: 5 } } }, known);
+  check("out-of-range ambient light_level rejected", !r.valid);
 }
 
 console.log("\n--- applySceneDelta ---");
 {
   const start = props(3);
   const out = applySceneDelta(start, {
-    add: [{ id: "new", type: "tree", x: 2, z: 2 }],
+    add: [{ id: "new", label: "a tree", form: "tall", x: 2, z: 2 }],
     move: [{ id: "p0", x: 9, z: 9 }],
     remove: ["p1"],
   });

@@ -43,7 +43,7 @@ export default function App() {
 
     if (canMutate) {
       // scene_delta null means "nothing physical changed" — still a valid turn.
-      if (ws.scene_delta) scene3d.applyDelta(ws.scene_delta, ws.scene.mood);
+      if (ws.scene_delta) scene3d.applyDelta(ws.scene_delta);
     } else {
       scene3d.setScene(ws.scene);
     }

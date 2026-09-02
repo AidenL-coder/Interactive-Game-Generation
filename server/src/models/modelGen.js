@@ -26,26 +26,37 @@ if (!modelGenEnabled) {
   );
 }
 
-// Subject prompts per prop type. Text-to-3D behaves best with a single, clearly-bounded
-// object and an explicit style, the same way the sprite prompts do.
-const MODEL_PROMPTS = {
-  tree: "a single stylized fantasy tree with a thick gnarled trunk and full leafy canopy",
-  npc: "a single standing hooded traveler figure in a cloak, game character",
-  item: "a small ornate treasure chest, closed, fantasy game prop",
-  altar: "an ancient carved stone altar pedestal with worn runes",
-  crate: "a wooden supply crate with iron banding, game prop",
-  torch: "a wooden torch on an iron stand, fantasy game prop",
-  rock: "a large mossy granite boulder, natural rock formation",
-  pillar: "a weathered broken stone column, ancient ruin architecture",
-  structure: "a small stone hut with a shingled roof, fantasy game building",
-};
-
-export function hasModelFor(type) {
-  return Boolean(MODEL_PROMPTS[type]);
+// Models are generated from the object's own description, so the world isn't limited to
+// a fixed catalogue of nouns. Text-to-3D behaves best with a single, clearly-bounded
+// object and an explicit style.
+const MAX_DESCRIPTION = 140;
+function sanitize(description) {
+  return String(description || "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/["`\\{}<>]/g, "")
+    .trim()
+    .slice(0, MAX_DESCRIPTION);
 }
 
-function cachePath(type) {
-  return path.join(CACHE_DIR, `prop_${type}.glb`);
+function modelPrompt(description) {
+  return (
+    `${sanitize(description)}, as a single isolated 3D game asset. ` +
+    "Clean topology, game-ready, centered, complete object only, no base or platform, " +
+    "no scenery, no text."
+  );
+}
+
+// Stable, filesystem-safe filename for an arbitrary description.
+function descriptionKey(description) {
+  const clean = sanitize(description).toLowerCase();
+  let h = 5381;
+  for (let i = 0; i < clean.length; i++) h = ((h * 33) ^ clean.charCodeAt(i)) >>> 0;
+  const slug = clean.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 28);
+  return `${slug}-${h.toString(36)}`;
+}
+
+function cachePath(description) {
+  return path.join(CACHE_DIR, `prop_${descriptionKey(description)}.glb`);
 }
 
 const inFlight = new Map();
@@ -56,8 +67,8 @@ async function sleep(ms) {
 
 // Meshy runs generation as an async task: create it, then poll until it reports
 // SUCCEEDED and hands back a download URL.
-async function generateViaMeshy(type) {
-  const prompt = MODEL_PROMPTS[type];
+async function generateViaMeshy(description) {
+  const prompt = modelPrompt(description);
   const headers = {
     Authorization: `Bearer ${MESHY_API_KEY}`,
     "Content-Type": "application/json",
@@ -103,14 +114,15 @@ async function generateViaMeshy(type) {
 }
 
 /**
- * Returns GLB bytes for a prop type, generating on a cache miss.
- * Concurrent callers for the same type share one generation.
+ * Returns GLB bytes for an object description, generating on a cache miss.
+ * Concurrent callers for the same description share one generation.
  */
-export async function getModel(type) {
-  const file = cachePath(type);
+export async function getModel(description) {
+  const key = descriptionKey(description);
+  const file = cachePath(description);
 
-  // Cache is checked before the enabled flag: a model committed or copied into the
-  // cache directory should still be served even with no API key configured.
+  // Cache is checked before the enabled flag: a model copied into the cache directory
+  // by hand should still be served even with no API key configured.
   try {
     return await readFile(file);
   } catch {
@@ -118,19 +130,17 @@ export async function getModel(type) {
   }
 
   if (!modelGenEnabled) throw new Error("model generation disabled (no API key)");
-  if (!hasModelFor(type)) throw new Error(`no model prompt defined for '${type}'`);
-
-  if (inFlight.has(type)) return inFlight.get(type);
+  if (inFlight.has(key)) return inFlight.get(key);
 
   const job = (async () => {
     const startedAt = Date.now();
-    const buffer = await generateViaMeshy(type);
+    const buffer = await generateViaMeshy(description);
     await mkdir(CACHE_DIR, { recursive: true });
     await writeFile(file, buffer);
-    console.log(`[models] generated ${type} (${buffer.length}B) in ${Date.now() - startedAt}ms`);
+    console.log(`[models] generated "${description}" (${buffer.length}B) in ${Date.now() - startedAt}ms`);
     return buffer;
-  })().finally(() => inFlight.delete(type));
+  })().finally(() => inFlight.delete(key));
 
-  inFlight.set(type, job);
+  inFlight.set(key, job);
   return job;
 }

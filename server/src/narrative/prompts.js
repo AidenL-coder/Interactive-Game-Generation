@@ -1,4 +1,4 @@
-import { BIOMES, MOODS, TIMES_OF_DAY, PROP_TYPES, GROUND_HALF_EXTENT } from "iwg-shared";
+import { PROP_FORMS, GROUND_HALF_EXTENT } from "iwg-shared";
 
 // Two independent ablation flags, both read from session.ablation:
 //   personalization: whether the user profile is injected into the prompt at all
@@ -80,12 +80,21 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
   const trackPreferences = ablation?.personalization && ablation?.evolving;
   parts.push(
     `Scene constraints for \`${toolName}\`:\n` +
-      `- biome ∈ {${BIOMES.join(", ")}}, mood ∈ {${MOODS.join(", ")}}, ` +
-      `time_of_day ∈ {${TIMES_OF_DAY.join(", ")}}\n` +
-      `- props: 5-14 items, each type ∈ {${PROP_TYPES.join(", ")}}, x and z within ` +
-      `[-${GROUND_HALF_EXTENT}, ${GROUND_HALF_EXTENT}] (this is the walkable ground ` +
-      "plane's half-extent), spaced so the player can walk between them\n" +
-      "- every prop needs a stable `id` (e.g. 'altar_01') and a short `label`\n" +
+      "- environment: describe THIS place specifically — `description` and " +
+      "`ground_cover` are what the sky and ground artwork get generated from, so be " +
+      "concrete and visual. You are not choosing from a list: a drowned cathedral, a " +
+      "server farm, a whale's ribcage, a sunlit orchard are all equally valid.\n" +
+      "- environment.palette: real hex colours that suit the place, and `light_level` / " +
+      "`visibility` / `scatter_density` in 0-1. These drive the actual lighting and fog, " +
+      "so a midnight cellar and a noon desert should look genuinely different.\n" +
+      `- props: 5-14 items, x and z within [-${GROUND_HALF_EXTENT}, ${GROUND_HALF_EXTENT}] ` +
+      "(the walkable ground plane's half-extent), spaced so the player can walk between " +
+      "them\n" +
+      "- every prop needs a stable `id` (e.g. 'altar_01'), a specific visual `label` " +
+      `(the artwork is generated from it), and a \`form\` ∈ {${PROP_FORMS.join(", ")}} ` +
+      "describing how it occupies space\n" +
+      "- give at least one prop `character: true` where it makes sense — a person or " +
+      "creature the player can walk up to and talk to, named in the label\n" +
       "- choices: 2-4 concrete, distinct actions the player can take next\n" +
       "- narrative: 2-4 short second-person paragraphs describing the current beat\n" +
       // Displayed to the player as a status panel. Without visible, changing stakes a
@@ -135,11 +144,11 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
           ? `Props currently in the world:\n${inventory}\n\n`
           : "The world is currently empty — this is the opening scene.\n\n") +
         "Emit `scene_delta` to mutate this world (add / move / remove props, and " +
-        "`ambient` for mood or time-of-day shifts). Only reference ids that exist in " +
+        "`ambient` for lighting, palette or visibility shifts). Only reference ids that exist in " +
         "the list above or that you add in the same turn. Keep the world between 5 and " +
         "14 props.\n" +
         "Emit a full `scene` INSTEAD of `scene_delta` only when the story relocates " +
-        "somewhere genuinely new (a different biome/location) — that replaces the world " +
+        "somewhere genuinely new (a different place entirely) — that replaces the world " +
         "wholesale. Never emit both.\n" +
         "If the beat changes nothing physical (reading a letter, a conversation), omit " +
         "`scene_delta` entirely — the world simply carries forward. Do not invent " +
@@ -171,7 +180,8 @@ export function summarizeStateForMemorylessTurn(worldState) {
   if (!worldState) return "No prior state — this is the first turn.";
   const { scene, state_updates } = worldState;
   const lines = [
-    `Last biome/mood/time: ${scene?.biome}/${scene?.mood}/${scene?.time_of_day}`,
+    `Current place: ${scene?.environment?.description || "unknown"}` +
+      (scene?.environment?.ground_cover ? ` (underfoot: ${scene.environment.ground_cover})` : ""),
   ];
   if (state_updates && Object.keys(state_updates).length) {
     lines.push(`Tracked state: ${JSON.stringify(state_updates)}`);

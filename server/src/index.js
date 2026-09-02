@@ -6,9 +6,9 @@ import { createSession, getSession, updateSession } from "./state/sessionStore.j
 import { generateScene } from "./narrative/generateScene.js";
 import { firstTurnMessage, choiceTurnMessage } from "./narrative/prompts.js";
 import { logGeneration } from "./logging/logger.js";
-import { getTexture, textureGenEnabled, hasSpriteFor } from "./textures/textureGen.js";
-import { getModel, modelGenEnabled, hasModelFor } from "./models/modelGen.js";
-import { BIOMES, MOODS, TIMES_OF_DAY, PROP_TYPES } from "iwg-shared";
+import { getTexture, textureGenEnabled } from "./textures/textureGen.js";
+import { getModel, modelGenEnabled } from "./models/modelGen.js";
+import { PROP_FORMS } from "iwg-shared";
 
 const app = express();
 app.use(cors());
@@ -31,42 +31,29 @@ app.get("/api/texture", async (req, res) => {
     return res.status(503).json({ error: "texture generation disabled (no API key configured)" });
   }
 
-  const {
-    biome,
-    mood,
-    time_of_day: timeOfDay,
-    kind = "ground",
-    type: propType,
-    label,
-  } = req.query;
+  const { kind = "ground", type: propType, label, light_level: lightLevel } = req.query;
 
-  // Validate against the shared enums rather than interpolating raw query strings into
-  // a model prompt — this endpoint is unauthenticated and otherwise lets a caller drive
-  // arbitrary text into a paid image API.
   if (!["ground", "sky", "prop", "sprite"].includes(kind)) {
     return res.status(400).json({ error: "kind must be 'ground', 'sky', 'prop', or 'sprite'" });
   }
-  if (kind === "sprite") {
-    if (!hasSpriteFor(propType)) {
-      return res.status(404).json({ error: "no sprite defined for that prop type" });
-    }
-  } else if (kind === "prop") {
-    // Prop materials depend only on the prop type, not on scene context.
-    if (!PROP_TYPES.includes(propType)) {
-      return res.status(400).json({ error: "type must be a valid prop type" });
-    }
-  } else if (!BIOMES.includes(biome) || !MOODS.includes(mood) || !TIMES_OF_DAY.includes(timeOfDay)) {
-    return res.status(400).json({ error: "biome, mood, and time_of_day must be valid enum values" });
+
+  // There is no vocabulary enum to validate against any more — the whole point is that
+  // the model authors its own. What still matters is that this unauthenticated endpoint
+  // can't be used to drive unbounded attacker-chosen text into a paid image API, so the
+  // description is length-capped and stripped downstream in sanitizeLabel().
+  if (!label || !String(label).trim()) {
+    return res.status(400).json({ error: "label is required — it is what gets generated" });
+  }
+  if (String(label).length > 200) {
+    return res.status(400).json({ error: "label too long" });
   }
 
   try {
     const { buffer, contentType } = await getTexture({
-      biome,
-      mood,
-      timeOfDay,
       kind,
       propType,
-      label,
+      label: String(label),
+      lightLevel: Number(lightLevel) || 0.7,
     });
     res.set("Content-Type", contentType);
     res.set("Cache-Control", "public, max-age=86400");
@@ -82,11 +69,8 @@ app.get("/api/texture", async (req, res) => {
 app.get("/api/model", async (req, res) => {
   const { type } = req.query;
 
-  if (!PROP_TYPES.includes(type)) {
-    return res.status(400).json({ error: "type must be a valid prop type" });
-  }
-  if (!hasModelFor(type)) {
-    return res.status(404).json({ error: "no model defined for that prop type" });
+  if (!type || !String(type).trim() || String(type).length > 200) {
+    return res.status(400).json({ error: "type (the object description) is required" });
   }
 
   try {
