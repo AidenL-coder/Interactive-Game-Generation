@@ -55,11 +55,24 @@ const clamp01 = (v, fallback) => (typeof v === "number" && v >= 0 && v <= 1 ? v 
 export function lightingOf(environment) {
   const level = clamp01(environment?.light_level, 0.7);
   return {
-    sun: 0.45 + level * 1.7,
-    ambient: 0.55 + level * 0.8,
+    // Floors raised again after a "drowned cathedral" (light_level 0.2) rendered as
+    // objects floating in a black void. A dark scene still has to show its own floor;
+    // gloom should come from colour and contrast, not from an absence of light.
+    sun: 0.9 + level * 1.5,
+    ambient: 0.85 + level * 0.7,
     // Low light sits the sun lower in the sky for long, raking shadows.
     sunHeight: 6 + level * 20,
   };
+}
+
+// The ground is the largest surface on screen and the thing every object is read
+// against. Authored palettes are often near-black for mood, which makes props look like
+// they're floating in nothing, so its lightness gets a floor while keeping its hue.
+export function groundColorOf(environment) {
+  const color = paletteOf(environment).ground;
+  const hsl = { h: 0, s: 0, l: 0 };
+  color.getHSL(hsl);
+  return new THREE.Color().setHSL(hsl.h, hsl.s, Math.max(hsl.l, 0.26));
 }
 
 /** Fog distances from visibility: 0 closes in tight, 1 opens to the horizon. */

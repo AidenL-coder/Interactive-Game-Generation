@@ -78,7 +78,11 @@ export default function App() {
     if (!scene3d) return undefined;
     scene3d.onInteract = (prop) => {
       if (busy || playing) return;
-      handleChoose({ freeText: `Examine and interact with the ${prop.label || prop.type}.` });
+      handleChoose({
+        freeText: prop.character
+          ? `Approach and speak with ${prop.label}.`
+          : `Examine and interact with the ${prop.label}.`,
+      });
     };
     return () => {
       scene3d.onInteract = null;
@@ -117,6 +121,20 @@ export default function App() {
     setError(null);
     try {
       const result = await sendChoice(session.sessionId, choicePayload);
+
+      // A delta can introduce objects that have never been drawn. Generate their art
+      // before the turn is shown, so the world never visibly assembles itself.
+      const added = result.worldState?.scene_delta?.add;
+      const fresh = result.relocated ? result.worldState?.scene?.props : added;
+      if (fresh?.length) {
+        setPrewarm({ done: 0, total: fresh.length, label: "drawing what changed" });
+        await prewarmScene(
+          { environment: result.worldState.scene.environment, props: fresh },
+          (done, total, label) => setPrewarm({ done, total, label })
+        );
+        setPrewarm(null);
+      }
+
       setSession(result);
     } catch (err) {
       setError(err.message);
@@ -168,6 +186,11 @@ export default function App() {
         onChoose={handleChoose}
         busy={busy || playing}
       />
+
+      {/* Also shown mid-game: a turn that introduces new objects generates their art
+          before the turn is revealed, so the world never assembles itself on screen. */}
+      {prewarm && <PrewarmOverlay {...prewarm} />}
+
       {error && <p className="error floating-error">{error}</p>}
     </div>
   );

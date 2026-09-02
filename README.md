@@ -18,12 +18,30 @@ shared/  WorldState JSON schema + vocab shared by server (generation) and web (r
 docs/    Research framing: problem formulation, related work, ablations, eval plan
 ```
 
-The model never generates images or meshes directly. It emits a structured `WorldState`
-(narrative text + a scene descriptor: biome, mood, time of day, a list of typed/placed
-props, and the next choices) via a forced tool call — see `shared/worldState.js` for the
-exact schema. The renderer deterministically turns that JSON into real three.js geometry
-and procedural textures. This split is what makes the system ablatable: any difference
-between conditions traces back to the generation call, not rendering noise.
+The model emits a structured `WorldState` via a forced tool call — narrative prose, the
+next choices, and a scene descriptor — and a deterministic renderer turns that JSON into
+a real walkable three.js world. See `shared/worldState.js` for the exact schema. The
+split is what makes the system ablatable: any difference between conditions traces back
+to the generation call, not to rendering noise.
+
+**Nothing about the world is drawn from a fixed list.** The model authors its own
+vocabulary: every prop carries a free-text description (`"MOSS-7, a squat maintenance
+drone half-buried in vines"`), and every scene an environment — what the place is, what
+the floor is made of, a hex palette, and light/visibility/density ratios that drive the
+actual lighting, fog and ground cover. A drowned cathedral and an orbital hydroponics
+bay are equally expressible, and neither is a preset.
+
+Art is generated from those descriptions and cached on them:
+
+- **ground and sky** from the environment's description and ground cover
+- **object sprites** from each prop's own label, keyed out of a chroma background
+- **3D models (GLB)** from the same label, when a text-to-3D key is configured
+- everything else — terrain relief, hundreds of instanced scatter details, the distant
+  horizon — is procedural, derived from the environment's palette and density
+
+Props resolve through three tiers, best-effort: real 3D model → generated billboard →
+primitive with a generated surface texture. Each upgrade lands in place, so a prop is
+always visible and nothing blocks on the network.
 
 ## Setup
 
@@ -46,6 +64,24 @@ npm run dev:web      # http://localhost:5173  (proxies /api -> :3001)
 Open `http://localhost:5173`, fill in the start form (name, interests, source text, and
 the two ablation toggles), then click into the 3D view and use WASD + mouse look. Choices
 appear in the bottom panel; picking one (or typing free text) regenerates the world.
+
+## Presenting it
+
+Generation is slow by design — every object in a world is drawn from scratch for that
+story. A world's entire art set is generated up front, behind a progress screen, before
+the player is let in, so the opening shot is finished rather than assembling itself on
+screen. Expect roughly **40 seconds** for a fresh world with an image key configured,
+and near-instant on anything already generated, since everything caches to disk
+permanently.
+
+For a live demo, run the premise once beforehand: the cache makes the second run
+immediate.
+
+## Controls
+
+Click to capture the mouse. **WASD** to move, **Shift** to run, **E** to interact with
+whatever the crosshair is on (talking to people, examining objects — both feed back into
+the story as a normal turn), **Esc** to release the mouse.
 
 ## Current status / known gaps
 

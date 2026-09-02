@@ -187,6 +187,28 @@ export async function attachSprite(group, form, label) {
   // The prop may have been removed by a delta while its artwork was in flight.
   if (!loaded || !group.parent) return false;
 
+  // Flat things lie on the floor — a pool of water or a hatch drawn as a standing
+  // billboard would be absurd. They get a ground decal instead.
+  if (form === "flat") {
+    const size = 2.6 * (loaded.aspect > 1 ? loaded.aspect : 1);
+    const decal = new THREE.Mesh(
+      new THREE.PlaneGeometry(size, size / (loaded.aspect || 1)),
+      new THREE.MeshStandardMaterial({
+        map: loaded.texture,
+        transparent: true,
+        alphaTest: 0.3,
+        roughness: 0.4,
+        depthWrite: false,
+      })
+    );
+    decal.rotation.x = -Math.PI / 2;
+    decal.position.y = 0.04; // above the terrain to avoid z-fighting
+    decal.receiveShadow = true;
+    for (const child of [...group.children]) child.visible = false;
+    group.add(decal);
+    return true;
+  }
+
   const height = FORM_HEIGHT[form] || 1.5;
   const material = new THREE.SpriteMaterial({
     map: loaded.texture,

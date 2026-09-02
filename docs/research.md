@@ -31,6 +31,25 @@ renderer as deterministic is what makes `scene_t` comparable across ablations: a
 difference in the rendered world traces back to the generation call, not to rendering
 noise.
 
+**Open vocabulary.** `scene_t` deliberately contains no fixed categorical vocabulary.
+An earlier version enumerated eight biomes and eleven prop types, which meant every
+generated world was the same small set of nouns re-skinned — a space station and a
+Victorian parlour both had to describe themselves with "altar" and "crate", and each
+biome mapped to one hardcoded scatter recipe, so every forest was byte-identical. The
+model now authors the world's own vocabulary: each prop carries a free-text `label`
+(from which its artwork is generated) and each scene an `environment` with a
+description, ground cover, an explicit hex palette, and light/visibility/density
+ratios that drive the actual render.
+
+The single remaining enum is `form` (`tall`/`wide`/`small`/`humanoid`/`flat`), which is
+not descriptive vocabulary but the renderer's only way to know how an object occupies
+space before its artwork exists — it decides placeholder shape, collision, sizing, and
+whether the object can be billboarded.
+
+This trade costs enum-conformance checking, which was measuring conformance to a
+template we deliberately removed. It costs nothing in the spatial-consistency metrics
+below: those were always about identifiers, dangling references and coordinate bounds.
+
 Objective (cf. Kelley's slide 49): `Overall quality = Task quality + λ · Personalization quality`,
 where task quality is roughly "is this a coherent, playable, well-formed world/story"
 and personalization quality is "does it reflect `P_u`, and does it stay consistent turn

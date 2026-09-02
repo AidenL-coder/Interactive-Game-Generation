@@ -21,16 +21,23 @@ export const PROP_FORMS = [
   "flat", // pools, rugs, hatches, scorch marks — lies on the ground
 ];
 
-// Rendering strategy per form. Architectural things keep real geometry because you can
-// walk around them and a flat card gives itself away; everything else is billboarded
-// generated art, which looks far better than a primitive ever will.
-export const GEOMETRIC_FORMS = new Set(["wide"]);
+// Forms that keep primitive geometry instead of becoming billboarded artwork.
+//
+// This was `["wide"]`, on the reasoning that you walk around architecture and a flat
+// card gives itself away. In practice the model uses "wide" for far more than walls —
+// lecterns, collapsed racks, hatches — and those rendered as featureless dark boxes
+// sitting among detailed generated art, which looked far worse than a billboard seen
+// from a slightly wrong angle. Empty for now: everything gets art, and the primitive
+// survives underneath as the collision volume and the pre-generation placeholder.
+export const GEOMETRIC_FORMS = new Set();
 
 export const FORM_HEIGHT = {
   tall: 3.4,
-  wide: 2.4,
+  wide: 2.2,
   small: 0.8,
   humanoid: 1.85,
+  // Flat things lie on the ground, so they're drawn as a ground decal rather than a
+  // standing billboard — see attachSprite.
   flat: 0.12,
 };
 

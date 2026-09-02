@@ -7,7 +7,7 @@ import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { GROUND_HALF_EXTENT } from "iwg-shared";
-import { paletteOf, lightingOf, fogOf } from "./palette.js";
+import { paletteOf, lightingOf, fogOf, groundColorOf } from "./palette.js";
 import { applyPropTexture } from "./propTextures.js";
 import { attachSprite } from "./propSprites.js";
 import { attachModel } from "./propModels.js";
@@ -395,7 +395,7 @@ export class Scene3D {
 
     // Flat palette colour until the generated ground texture arrives.
     const groundMat = new THREE.MeshStandardMaterial({
-      color: palette.ground,
+      color: groundColorOf(env),
       roughness: 1,
     });
     const ground = new THREE.Mesh(groundGeo, groundMat);

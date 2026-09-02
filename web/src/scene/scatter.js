@@ -34,6 +34,8 @@ const MAX_DISTANT = 150;
 const ENCLOSED_HINTS = [
   "cave", "cavern", "interior", "indoor", "room", "hall", "corridor", "tunnel",
   "chamber", "basement", "cellar", "vault", "inside", "underground", "mine",
+  "cathedral", "nave", "church", "temple", "crypt", "library", "station", "bay",
+  "warehouse", "factory", "lab", "bunker", "shaft", "aisle", "atrium", "dome",
 ];
 
 // Words implying vegetation. Without these the scatter stays mineral — sand, rubble,
