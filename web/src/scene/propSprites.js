@@ -105,7 +105,8 @@ export function propSprite(type, label) {
   // Cache on the label, not just the type: one sprite per type meant every world reused
   // the same handful of objects. The model names each prop specifically, so that
   // description is what the art comes from.
-  const key = label ? `${type}::${label}` : type;
+  if (!label || !String(label).trim()) return Promise.resolve(null);
+  const key = `${type}::${label}`;
   if (cache.has(key)) return cache.get(key);
 
   const job = (async () => {

@@ -20,6 +20,9 @@ const REPEAT = [2, 2];
  * that case, so the scene still renders — just without generated detail.
  */
 export function propTexture(description) {
+  // An empty description has nothing to generate from, and the endpoint rightly
+  // rejects it — don't make the request at all.
+  if (!description || !String(description).trim()) return Promise.resolve(null);
   if (cache.has(description)) return cache.get(description);
 
   const job = (async () => {

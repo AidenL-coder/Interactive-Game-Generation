@@ -8,6 +8,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "/api";
 const cache = new Map();
 
 export function propParts(label, form) {
+  if (!label || !String(label).trim()) return Promise.resolve(null);
   const key = `${form || ""}::${label}`;
   if (cache.has(key)) return cache.get(key);
 

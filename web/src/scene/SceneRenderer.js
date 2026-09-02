@@ -41,10 +41,9 @@ const FOCUS_MIN_ALIGNMENT = 0.9; // ~25° cone around the view direction
 // rather than ending in a visible edge.
 const HORIZON_MARGIN = 60;
 
-// Opening-shot framing: how many vantage points to test around the scene's centre, and
-// how far back to stand from it.
+// Opening-shot framing: how many vantage points to test around the scene's centre. How
+// far back to stand is derived per scene from how spread out the props are.
 const VANTAGE_SAMPLES = 24;
-const VANTAGE_DISTANCE = 13;
 const OPENING_PITCH = THREE.MathUtils.degToRad(11);
 
 // Subtle darkening toward the frame edge. Costs almost nothing and does a
@@ -93,14 +92,23 @@ function chooseVantage(props) {
     z: props.reduce((s, p) => s + p.z, 0) / props.length,
   };
 
+  // Stand back in proportion to how spread out the scene actually is. A fixed 13m made
+  // a tight cluster of objects look like a distant toy set, and would have cropped a
+  // sprawling one. Framed to the spread, plus a little breathing room.
+  const spread = Math.max(
+    ...props.map((p) => Math.hypot(p.x - target.x, p.z - target.z)),
+    2
+  );
+  const distance = THREE.MathUtils.clamp(spread * 1.15 + 4, 7, 20);
+
   const limit = GROUND_HALF_EXTENT - 2;
   let best = null;
   let bestScore = -Infinity;
 
   for (let i = 0; i < VANTAGE_SAMPLES; i++) {
     const angle = (i / VANTAGE_SAMPLES) * Math.PI * 2;
-    const x = THREE.MathUtils.clamp(target.x + Math.cos(angle) * VANTAGE_DISTANCE, -limit, limit);
-    const z = THREE.MathUtils.clamp(target.z + Math.sin(angle) * VANTAGE_DISTANCE, -limit, limit);
+    const x = THREE.MathUtils.clamp(target.x + Math.cos(angle) * distance, -limit, limit);
+    const z = THREE.MathUtils.clamp(target.z + Math.sin(angle) * distance, -limit, limit);
 
     const dx = target.x - x;
     const dz = target.z - z;
