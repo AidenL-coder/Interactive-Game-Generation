@@ -181,11 +181,13 @@ export function buildScatter(scene, seed, spawn = { x: 0, z: 0 }) {
     }
   }
 
-  // Without a distant band the world visibly stops at an invisible wall — but indoors
-  // there should be no horizon at all.
-  if (!enclosed) {
-    const distantCount = leafy ? MAX_DISTANT : Math.round(MAX_DISTANT * 0.35);
-    group.add(buildDistantScenery(distantCount, palette, rng, seed));
+  // A distant band of cone silhouettes only reads as a treeline. In an open desert it
+  // read as a row of small yellow pyramids on the horizon, and indoors there should be
+  // no horizon at all — so it's drawn only where there's vegetation to suggest. Bare
+  // and enclosed places rely on fog and the extended ground plane instead, which is
+  // what a sandy or interior horizon should look like anyway.
+  if (leafy && !enclosed) {
+    group.add(buildDistantScenery(MAX_DISTANT, palette, rng, seed));
   }
 
   return group;
