@@ -8,6 +8,7 @@ import { firstTurnMessage, choiceTurnMessage } from "./narrative/prompts.js";
 import { logGeneration } from "./logging/logger.js";
 import { getTexture, textureGenEnabled } from "./textures/textureGen.js";
 import { getModel, modelGenEnabled } from "./models/modelGen.js";
+import { getGeometry, geometryGenEnabled } from "./geometry/geometryGen.js";
 import { PROP_FORMS } from "iwg-shared";
 
 const app = express();
@@ -61,6 +62,31 @@ app.get("/api/texture", async (req, res) => {
   } catch (err) {
     console.error("[GET /api/texture] generation failed:", err);
     res.status(502).json({ error: "texture generation failed", detail: String(err.message || err) });
+  }
+});
+
+// Objects assembled from primitive parts — real geometry, built per description and
+// cached forever. This is the primary way props are rendered.
+app.get("/api/geometry", async (req, res) => {
+  const { label, form } = req.query;
+
+  if (!label || !String(label).trim()) {
+    return res.status(400).json({ error: "label is required" });
+  }
+  if (String(label).length > 200) {
+    return res.status(400).json({ error: "label too long" });
+  }
+
+  try {
+    const parts = await getGeometry(String(label), form ? String(form) : undefined);
+    res.set("Cache-Control", "public, max-age=604800");
+    res.json({ parts });
+  } catch (err) {
+    if (!geometryGenEnabled) {
+      return res.status(503).json({ error: "geometry generation disabled (no API key)" });
+    }
+    console.error("[GET /api/geometry] failed:", err);
+    res.status(502).json({ error: "geometry generation failed", detail: String(err.message || err) });
   }
 });
 

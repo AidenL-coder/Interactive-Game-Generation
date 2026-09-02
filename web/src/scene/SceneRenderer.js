@@ -12,6 +12,7 @@ import { applyPropTexture } from "./propTextures.js";
 import { attachSprite } from "./propSprites.js";
 import { attachModel } from "./propModels.js";
 import { GEOMETRIC_FORMS, PASSABLE_FORMS } from "iwg-shared";
+import { attachGeometry } from "./propGeometry.js";
 import { buildScatter } from "./scatter.js";
 import { heightAt, seedFromScene } from "./terrain.js";
 
@@ -138,6 +139,7 @@ function buildProp(prop, palette) {
   const scale = prop.scale && prop.scale > 0 ? prop.scale : 1;
   const base = palette?.ground || new THREE.Color(0x8a8578);
 
+
   const mat = (lighten) =>
     new THREE.MeshStandardMaterial({
       color: base.clone().lerp(new THREE.Color(0xffffff), lighten),
@@ -201,10 +203,14 @@ function buildProp(prop, palette) {
     }
   });
 
-  // Three tiers, best-effort and in order: a real 3D model, else billboarded artwork,
-  // else this primitive with a generated surface texture on it. Architectural forms skip
-  // the billboard tier because a flat card fails when you walk around it.
+  // Resolution order, best-effort, each upgrading in place as it arrives:
+  //   1. geometry assembled from primitives — real 3D, true shadows, solid from every
+  //      angle, and the primary path
+  //   2. a generated GLB model, if a text-to-3D key is configured
+  //   3. billboarded generated artwork
+  //   4. this primitive with a generated surface texture
   (async () => {
+    if (await attachGeometry(group, prop.label, prop.form)) return;
     if (await attachModel(group, prop.label, prop.form)) return;
     if (!GEOMETRIC_FORMS.has(prop.form)) {
       if (await attachSprite(group, prop.form, prop.label)) return;

@@ -95,6 +95,7 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
       "describing how it occupies space\n" +
       "- give at least one prop `character: true` where it makes sense — a person or " +
       "creature the player can walk up to and talk to, named in the label\n" +
+      "- every prop needs `parts`: the object built as real 3D geometry (see below)\n" +
       "- choices: 2-4 concrete, distinct actions the player can take next\n" +
       "- narrative: 2-4 short second-person paragraphs describing the current beat\n" +
       // Displayed to the player as a status panel. Without visible, changing stakes a
@@ -109,6 +110,33 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
           "short preference-name -> 0-1 weight pairs, e.g. {\"combat\": 0.7, \"dialogue\": 0.3}. Do not " +
           "omit this field."
         : "")
+  );
+
+  // Objects are built as actual geometry from primitives rather than fetched from any
+  // library, so anything is expressible and nothing is pre-authored.
+  parts.push(
+    "BUILDING OBJECTS. Each prop's `parts` is that object assembled out of primitive " +
+      "shapes — think building it from blocks. Aim for a recognisable SILHOUETTE with " +
+      "4-12 parts, not a detailed sculpt.\n" +
+      "Coordinates are metres, local to the object: y=0 is the ground, y is up, and the " +
+      "object is centred on x=z=0. A person is ~1.8 tall, a table ~0.8, a doorway ~2.1, " +
+      "a tree ~4.\n" +
+      "Shapes:\n" +
+      "- `box` — size [width, height, depth]. Slabs, crates, walls, planks, tabletops.\n" +
+      "- `cylinder` — size [bottom radius, height, top radius]. A top radius of 0 makes " +
+      "a cone, so use it for spires, tents and tapered legs too.\n" +
+      "- `sphere` — size [x, y, z] radii, so it can be squashed into an ellipsoid.\n" +
+      "- `lathe` — a `profile` of [radius, height] pairs revolved around the vertical " +
+      "axis. The best shape for columns, vases, balusters, domes and bottles.\n" +
+      "- `torus` — size [ring radius, tube radius, unused]. Rings, hoops, wheels.\n" +
+      "- `plane` — size [width, height, unused]. Banners, signs, sails; use `rot`.\n" +
+      "Give every part a `color` suited to its material, and `emissive` for anything " +
+      "that glows — flame, screens, runes, eyes. `rot` is in degrees.\n" +
+      "Example, a wooden lectern: a box base [0.6,0.1,0.5] at y 0.05, a cylinder shaft " +
+      "[0.08,1.0,0.08] at y 0.55, and a box top [0.5,0.06,0.4] at y 1.1 rotated " +
+      "[-20,0,0].\n" +
+      "Build what the label actually describes. If it's a camel, that's a body, a neck, " +
+      "a head, four legs and two humps — not a brown box."
   );
 
   // The avatar acts out the chosen action in the world before control returns, so the

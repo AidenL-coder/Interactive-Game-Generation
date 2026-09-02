@@ -246,6 +246,13 @@ export async function generateScene({
       break;
     }
     lastViolations = check.violations;
+    // "scene missing" describes a symptom, not a cause. Dump the shape of what actually
+    // came back so the real fault is visible instead of inferred.
+    console.warn(
+      `[generateScene] returned keys: ${Object.keys(rawCandidate || {}).join(", ") || "(none)"}` +
+        ` | stop_reason: ${response.stop_reason}` +
+        ` | output tokens: ${response.usage?.output_tokens}`
+    );
     console.warn(
       `[generateScene] invalid ${usingDelta ? "delta" : "WorldState"} on attempt ` +
         `${attempts + 1}/${MAX_GENERATION_ATTEMPTS}: ${lastViolations.join("; ")}`

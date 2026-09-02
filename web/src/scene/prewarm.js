@@ -1,4 +1,5 @@
 import { propSprite } from "./propSprites.js";
+import { propParts } from "./propGeometry.js";
 import { propTexture } from "./propTextures.js";
 import { propModel } from "./propModels.js";
 import { GEOMETRIC_FORMS, FORM_HEIGHT } from "iwg-shared";
@@ -33,6 +34,9 @@ function warmGround(env) {
 function warmProp(prop) {
   // Mirrors the renderer's own resolution order so we warm exactly what it will ask for.
   return (async () => {
+    // Assembled geometry is the primary render path, so warm it first.
+    const parts = await propParts(prop.label, prop.form).catch(() => null);
+    if (parts) return;
     const model = await propModel(prop.label, FORM_HEIGHT[prop.form]).catch(() => null);
     if (model) return;
     if (!GEOMETRIC_FORMS.has(prop.form)) {
