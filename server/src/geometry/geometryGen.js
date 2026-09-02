@@ -38,20 +38,36 @@ should be centred on x=z=0. Reference sizes: a person ~1.8 tall, a table ~0.8, a
 ~2.1, a tree ~4, a camel ~2.2.
 
 Shapes:
-- box — size [width, height, depth]. Slabs, crates, walls, planks, tabletops, limbs.
+- box — size [width, height, depth]. Slabs, crates, walls, planks, tabletops.
 - cylinder — size [bottom radius, height, top radius]. A top radius of 0 gives a cone,
   so use it for spires, tents and tapered legs too.
 - sphere — size [x, y, z] radii, so it can be squashed into an ellipsoid.
+- capsule — size [radius, length, unused]. Rounded ends; the right choice for limbs,
+  necks and animal bodies, where a cylinder looks machined.
+- wedge — size [width, height, depth]. A triangular prism: roofs, ramps, prows, blades.
 - lathe — a profile of [radius, height] pairs revolved around the vertical axis. Best
   for columns, vases, balusters, domes, bottles.
 - torus — size [ring radius, tube radius, unused]. Rings, hoops, wheels.
 - plane — size [width, height, unused]. Banners, signs, sails; orient with rot.
 
-Give each part a color suited to its material, and emissive for anything that glows —
-flame, screens, runes, eyes. rot is in degrees.
+USE MIRROR AND REPEAT. They are how you get detail without spending parts:
+- mirror: "x" gives a left/right pair, "z" front/back, "xz" all four corners. Define ONE
+  leg at pos [0.35, 0.4, 0.5] with mirror "xz" and you get four legs for one part. Use it
+  for limbs, wings, horns, wheels, buttresses, symmetric anything.
+- repeat: { count, offset } steps copies along a line — fence posts, ribs, colonnades,
+  windows, railings. { count, radius } arranges them in a ring instead — spokes, columns
+  round a rotunda, teeth, petals.
 
-Build what the description actually says. A camel is a body, a neck, a head, four legs
-and two humps — not a brown box. A lectern is a base, a shaft and an angled top.`;
+Spend the parts you save on character: the thing that makes an object recognisable is
+usually one specific detail, not more bulk.
+
+Give each part a color suited to its material, emissive for anything that glows (flame,
+screens, runes, eyes), and smooth: true for organic parts — a faceted animal body looks
+like a mistake, while faceted stone looks carved. rot is in degrees.
+
+Build what the description actually says. A camel is a capsule body, a neck, a head, one
+mirrored leg and two humps — not a brown box. A cartwheel is a torus with one spoke
+repeated in a ring. A lectern is a base, a shaft and an angled top.`;
 
 export const geometryGenEnabled = Boolean(process.env.ANTHROPIC_API_KEY);
 

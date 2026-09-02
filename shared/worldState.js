@@ -52,10 +52,17 @@ export const PART_SHAPES = [
   "box",
   "cylinder", // also cones and tapers, via differing top/bottom radii
   "sphere",
+  "capsule", // rounded ends — limbs, necks, bodies, anything organic
+  "wedge", // triangular prism — roofs, ramps, prows, blades
   "lathe", // a revolved profile: columns, vases, balusters, domes, bottles
   "torus",
   "plane",
 ];
+
+// Axes a part can be mirrored across. Most objects are bilaterally symmetric, so this
+// roughly doubles the detail available within the same part budget: one leg definition
+// becomes two, one wing becomes a pair, one buttress becomes a colonnade's worth.
+export const MIRROR_AXES = ["x", "z", "xz"];
 
 export const MAX_PARTS = 14;
 
@@ -102,9 +109,46 @@ const PART_SCHEMA = {
         maxItems: 2,
       },
     },
+    mirror: {
+      type: "string",
+      enum: MIRROR_AXES,
+      description:
+        "Duplicate this part mirrored across an axis — 'x' for a left/right pair (legs, " +
+        "arms, wings, wheels), 'z' for front/back, 'xz' for all four corners. Define one " +
+        "leg with mirror 'xz' instead of spending four parts on four legs.",
+    },
+    repeat: {
+      type: "object",
+      description:
+        "Repeat this part in a line or a ring — fence posts, colonnades, ribs, spokes, " +
+        "windows, teeth.",
+      properties: {
+        count: { type: "integer", minimum: 2, maximum: 16 },
+        offset: {
+          type: "array",
+          description: "[x, y, z] step between copies, for a straight run.",
+          items: { type: "number", minimum: -8, maximum: 8 },
+          minItems: 3,
+          maxItems: 3,
+        },
+        radius: {
+          type: "number",
+          minimum: 0,
+          maximum: 8,
+          description: "If set, arrange the copies in a ring of this radius instead.",
+        },
+      },
+      required: ["count"],
+    },
     color: { type: "string", description: "Hex colour, e.g. '#6b5a3a'." },
     roughness: { type: "number", minimum: 0, maximum: 1 },
     metalness: { type: "number", minimum: 0, maximum: 1 },
+    smooth: {
+      type: "boolean",
+      description:
+        "Smooth shading instead of faceted. Use for organic things — creatures, bodies, " +
+        "fruit, cloth. Leave off for anything built or carved.",
+    },
     emissive: {
       type: "string",
       description: "Hex colour for self-lit parts — flames, screens, glowing runes.",

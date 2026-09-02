@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { MIRROR_AXES } from "iwg-shared";
 
 // Builds real 3D geometry from the parts the model composed.
 //
@@ -32,6 +33,24 @@ function buildGeometry(part) {
       // Scaled after the fact so ellipsoids are possible from one geometry.
       return new THREE.SphereGeometry(1, 18, 12).scale(sx, sy, sz);
 
+    case "capsule":
+      // size = [radius, length, unused]. Rounded ends read as organic where a cylinder
+      // reads as machined — limbs, necks, bodies.
+      return new THREE.CapsuleGeometry(sx, Math.max(sy - sx * 2, 0.02), 4, 12);
+
+    case "wedge": {
+      // A triangular prism: roofs, ramps, prows, blades. Built by extruding a right
+      // triangle so the slope runs along +y.
+      const shape = new THREE.Shape();
+      shape.moveTo(-sx / 2, 0);
+      shape.lineTo(sx / 2, 0);
+      shape.lineTo(-sx / 2, sy);
+      shape.closePath();
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: sz, bevelEnabled: false });
+      geo.translate(0, 0, -sz / 2);
+      return geo;
+    }
+
     case "torus":
       // size = [ring radius, tube radius, unused]
       return new THREE.TorusGeometry(sx, Math.min(sy, sx * 0.9), 12, 24);
@@ -60,9 +79,10 @@ function buildMaterial(part) {
     color: new THREE.Color(part.color || "#8a8578"),
     roughness: typeof part.roughness === "number" ? part.roughness : 0.75,
     metalness: typeof part.metalness === "number" ? part.metalness : 0.05,
-    // Flat shading keeps the faceted, deliberate look and stops low-poly forms from
-    // reading as badly-smoothed organic shapes.
-    flatShading: true,
+    // Faceted by default: it keeps a deliberate, carved look and stops low-poly forms
+    // from reading as badly-smoothed blobs. Organic parts opt into smooth shading,
+    // where facets on a body or a fruit look like a modelling mistake.
+    flatShading: !part.smooth,
   });
   if (part.emissive) {
     material.emissive = new THREE.Color(part.emissive);
@@ -80,6 +100,66 @@ function buildMaterial(part) {
  * @param {Array} parts
  * @returns {THREE.Group|null} null if nothing usable could be built
  */
+// Expands one part definition into every placement it describes. Mirroring and
+// repetition are what let a 14-part budget produce a colonnade or a four-legged animal:
+// the part is defined once and the placements are derived, so detail costs geometry
+// rather than tokens.
+function placementsFor(part) {
+  const [px, py, pz] = part.pos || [0, 0, 0];
+  let placements = [{ x: px || 0, y: py || 0, z: pz || 0, flipX: false, flipZ: false }];
+
+  const repeat = part.repeat;
+  if (repeat && Number.isFinite(repeat.count) && repeat.count >= 2) {
+    const count = Math.min(Math.round(repeat.count), 16);
+    const expanded = [];
+    for (const base of placements) {
+      if (Number.isFinite(repeat.radius) && repeat.radius > 0) {
+        // Ring: spokes, columns around a rotunda, teeth.
+        for (let i = 0; i < count; i++) {
+          const a = (i / count) * Math.PI * 2;
+          expanded.push({
+            ...base,
+            x: base.x + Math.cos(a) * repeat.radius,
+            z: base.z + Math.sin(a) * repeat.radius,
+            spin: a,
+          });
+        }
+      } else {
+        // Straight run: fence posts, ribs, windows.
+        const [ox, oy, oz] = repeat.offset || [1, 0, 0];
+        for (let i = 0; i < count; i++) {
+          expanded.push({
+            ...base,
+            x: base.x + (ox || 0) * i,
+            y: base.y + (oy || 0) * i,
+            z: base.z + (oz || 0) * i,
+          });
+        }
+      }
+    }
+    placements = expanded;
+  }
+
+  if (MIRROR_AXES.includes(part.mirror)) {
+    const mirrored = [];
+    for (const p of placements) {
+      mirrored.push(p);
+      if (part.mirror === "x" || part.mirror === "xz") {
+        mirrored.push({ ...p, x: -p.x, flipX: true });
+      }
+      if (part.mirror === "z" || part.mirror === "xz") {
+        mirrored.push({ ...p, z: -p.z, flipZ: true });
+      }
+      if (part.mirror === "xz") {
+        mirrored.push({ ...p, x: -p.x, z: -p.z, flipX: true, flipZ: true });
+      }
+    }
+    placements = mirrored;
+  }
+
+  return placements;
+}
+
 export function buildPartsMesh(parts) {
   if (!Array.isArray(parts) || parts.length === 0) return null;
 
@@ -87,22 +167,35 @@ export function buildPartsMesh(parts) {
 
   for (const part of parts) {
     try {
-      const mesh = new THREE.Mesh(buildGeometry(part), buildMaterial(part));
+      // Geometry and material are shared across a part's placements; only the transform
+      // differs, so a 12-post fence is one geometry and twelve cheap meshes.
+      const geometry = buildGeometry(part);
+      const material = buildMaterial(part);
 
-      const [px, py, pz] = part.pos || [0, 0, 0];
-      mesh.position.set(px || 0, py || 0, pz || 0);
+      for (const place of placementsFor(part)) {
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set(place.x, place.y, place.z);
 
-      if (Array.isArray(part.rot) && part.rot.length === 3) {
-        mesh.rotation.set(
-          THREE.MathUtils.degToRad(part.rot[0] || 0),
-          THREE.MathUtils.degToRad(part.rot[1] || 0),
-          THREE.MathUtils.degToRad(part.rot[2] || 0)
-        );
+        if (Array.isArray(part.rot) && part.rot.length === 3) {
+          mesh.rotation.set(
+            THREE.MathUtils.degToRad(part.rot[0] || 0),
+            THREE.MathUtils.degToRad(part.rot[1] || 0),
+            THREE.MathUtils.degToRad(part.rot[2] || 0)
+          );
+        }
+        // Ring repeats face outward, so spokes and columns orient sensibly.
+        if (Number.isFinite(place.spin)) mesh.rotation.y += place.spin;
+
+        // Negative scale is what actually mirrors the shape, not just its position —
+        // otherwise an asymmetric part (a curved horn, an angled roof) would be
+        // translated rather than reflected.
+        if (place.flipX) mesh.scale.x *= -1;
+        if (place.flipZ) mesh.scale.z *= -1;
+
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
       }
-
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      group.add(mesh);
     } catch {
       // One malformed part shouldn't cost the whole object.
     }
