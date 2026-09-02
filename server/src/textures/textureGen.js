@@ -24,12 +24,18 @@ const ai = textureGenEnabled ? new GoogleGenAI({ apiKey }) : null;
 // render stays *deterministic given a WorldState* — which is what docs/research.md
 // relies on for cross-ablation comparability. A fresh sample per turn would reintroduce
 // exactly the rendering noise that design decision exists to eliminate.
-function cacheKey(biome, mood, timeOfDay, kind, propType) {
+function cacheKey(biome, mood, timeOfDay, kind, propType, label) {
   // Prop materials are keyed by type alone, not by biome/mood/time: bark is bark
   // regardless of the weather. 11 prop types => 11 generations, ever. Keying them by
   // scene context instead would multiply that by ~200 for no visible benefit.
+  // Material textures stay keyed by type: bark is bark regardless of which tree it's
+  // wrapped around, so per-label variants would be pure waste.
   if (kind === "prop") return `prop_${propType}.img`;
-  if (kind === "sprite") return `sprite_${propType}.img`;
+  // Object sprites key on the label, falling back to the type when a prop has none.
+  if (kind === "sprite") {
+    const key = labelKey(label);
+    return key ? `sprite_${propType}_${key}.img` : `sprite_${propType}.img`;
+  }
   return `${kind}_${biome}_${mood}_${timeOfDay}.img`;
 }
 
@@ -73,8 +79,42 @@ export function hasSpriteFor(propType) {
   return Boolean(SPRITE_SUBJECT_PROMPTS[propType]);
 }
 
-function spritePrompt(propType) {
-  const subject = SPRITE_SUBJECT_PROMPTS[propType] || "a single weathered stone object";
+// Labels are written by the model and can be arbitrary text, so they're bounded and
+// stripped before being interpolated into a prompt sent to a paid API. The prop type
+// stays as the authoritative subject anchor, so even a nonsense label still produces
+// something of the right category.
+const MAX_LABEL = 110;
+function sanitizeLabel(label) {
+  if (typeof label !== "string") return "";
+  return label
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/["`\\{}<>]/g, "")
+    .trim()
+    .slice(0, MAX_LABEL);
+}
+
+// Short stable filename component for a label, so cache entries stay readable and
+// filesystem-safe regardless of what the model wrote.
+export function labelKey(label) {
+  const clean = sanitizeLabel(label).toLowerCase();
+  if (!clean) return "";
+  let h = 5381;
+  for (let i = 0; i < clean.length; i++) h = ((h * 33) ^ clean.charCodeAt(i)) >>> 0;
+  const slug = clean.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 28);
+  return `${slug}-${h.toString(36)}`;
+}
+
+// Keyed by the prop's LABEL rather than its type. Generating one sprite per type meant
+// every world reused the same seven objects forever — a medieval monastery and a
+// derelict station got the identical tree. The model already names each prop
+// specifically ("pillar shaped like a swinging figure"), so that description is what
+// the art should come from; the type only supplies category and fallback.
+function spritePrompt(propType, label) {
+  const clean = sanitizeLabel(label);
+  const subject = clean
+    ? `a single ${clean}`
+    : SPRITE_SUBJECT_PROMPTS[propType] || "a single weathered stone object";
+
   return (
     `${subject}, painted fantasy game art, rich detail, soft even lighting. ` +
     "The object is centered, complete, and fully visible, viewed from ground level at " +
@@ -141,10 +181,10 @@ function skyPrompt(biome, mood, timeOfDay) {
  * Returns `{ buffer, contentType }` for a scene texture, generating via Gemini on a
  * cache miss. `kind` is "ground" | "sky".
  */
-export async function getTexture({ biome, mood, timeOfDay, kind = "ground", propType }) {
+export async function getTexture({ biome, mood, timeOfDay, kind = "ground", propType, label }) {
   if (!textureGenEnabled) throw new Error("texture generation disabled (no API key)");
 
-  const key = cacheKey(biome, mood, timeOfDay, kind, propType);
+  const key = cacheKey(biome, mood, timeOfDay, kind, propType, label);
   const cachePath = path.join(CACHE_DIR, key);
 
   try {
@@ -163,7 +203,7 @@ export async function getTexture({ biome, mood, timeOfDay, kind = "ground", prop
         : kind === "prop"
           ? propPrompt(propType)
           : kind === "sprite"
-            ? spritePrompt(propType)
+            ? spritePrompt(propType, label)
             : groundPrompt(biome, mood, timeOfDay);
 
     const startedAt = Date.now();

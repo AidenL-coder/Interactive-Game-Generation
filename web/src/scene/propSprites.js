@@ -104,12 +104,18 @@ function trimTransparent(canvas) {
 }
 
 /** Resolves to {texture, aspect} for a prop type, or null if unavailable. */
-export function propSprite(type) {
-  if (cache.has(type)) return cache.get(type);
+export function propSprite(type, label) {
+  // Cache on the label, not just the type: one sprite per type meant every world reused
+  // the same handful of objects. The model names each prop specifically, so that
+  // description is what the art comes from.
+  const key = label ? `${type}::${label}` : type;
+  if (cache.has(key)) return cache.get(key);
 
   const job = (async () => {
     try {
-      const res = await fetch(`${API_BASE}/texture?kind=sprite&type=${encodeURIComponent(type)}`);
+      const params = new URLSearchParams({ kind: "sprite", type });
+      if (label) params.set("label", label);
+      const res = await fetch(`${API_BASE}/texture?${params}`);
       if (!res.ok) return null;
       const trimmed = trimTransparent(chromaKeyToCanvas(await createImageBitmap(await res.blob())));
 
@@ -123,7 +129,7 @@ export function propSprite(type) {
     }
   })();
 
-  cache.set(type, job);
+  cache.set(key, job);
   return job;
 }
 
@@ -170,8 +176,8 @@ function contactShadow(width) {
  * The geometry stays until then, so the scene is never empty while waiting — and stays
  * permanently if generation is unavailable.
  */
-export async function attachSprite(group, type) {
-  const loaded = await propSprite(type);
+export async function attachSprite(group, type, label) {
+  const loaded = await propSprite(type, label);
   // The prop may have been removed by a delta while its artwork was in flight.
   if (!loaded || !group.parent) return;
 

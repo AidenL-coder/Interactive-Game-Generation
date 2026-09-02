@@ -277,7 +277,7 @@ function buildProp(prop, mood) {
   // is visible immediately and never blocks on the network.
   (async () => {
     if (await attachModel(group, prop.type)) return;
-    if (SPRITE_TYPES.has(prop.type)) await attachSprite(group, prop.type);
+    if (SPRITE_TYPES.has(prop.type)) await attachSprite(group, prop.type, prop.label);
     else applyPropTexture(group, prop.type);
   })();
 

@@ -31,7 +31,14 @@ app.get("/api/texture", async (req, res) => {
     return res.status(503).json({ error: "texture generation disabled (no API key configured)" });
   }
 
-  const { biome, mood, time_of_day: timeOfDay, kind = "ground", type: propType } = req.query;
+  const {
+    biome,
+    mood,
+    time_of_day: timeOfDay,
+    kind = "ground",
+    type: propType,
+    label,
+  } = req.query;
 
   // Validate against the shared enums rather than interpolating raw query strings into
   // a model prompt — this endpoint is unauthenticated and otherwise lets a caller drive
@@ -53,7 +60,14 @@ app.get("/api/texture", async (req, res) => {
   }
 
   try {
-    const { buffer, contentType } = await getTexture({ biome, mood, timeOfDay, kind, propType });
+    const { buffer, contentType } = await getTexture({
+      biome,
+      mood,
+      timeOfDay,
+      kind,
+      propType,
+      label,
+    });
     res.set("Content-Type", contentType);
     res.set("Cache-Control", "public, max-age=86400");
     res.send(buffer);
