@@ -7,3 +7,4 @@ server/.texture-cache/
 eval/out/
 .demo-logs/
 .DS_Store
+server/.model-cache/

@@ -7,6 +7,7 @@ import { generateScene } from "./narrative/generateScene.js";
 import { firstTurnMessage, choiceTurnMessage } from "./narrative/prompts.js";
 import { logGeneration } from "./logging/logger.js";
 import { getTexture, textureGenEnabled, hasSpriteFor } from "./textures/textureGen.js";
+import { getModel, modelGenEnabled, hasModelFor } from "./models/modelGen.js";
 import { BIOMES, MOODS, TIMES_OF_DAY, PROP_TYPES } from "iwg-shared";
 
 const app = express();
@@ -59,6 +60,33 @@ app.get("/api/texture", async (req, res) => {
   } catch (err) {
     console.error("[GET /api/texture] generation failed:", err);
     res.status(502).json({ error: "texture generation failed", detail: String(err.message || err) });
+  }
+});
+
+// Real 3D prop geometry. Same contract as /api/texture: a 503 means "not configured",
+// which the renderer treats as "fall back to sprites", not as an error.
+app.get("/api/model", async (req, res) => {
+  const { type } = req.query;
+
+  if (!PROP_TYPES.includes(type)) {
+    return res.status(400).json({ error: "type must be a valid prop type" });
+  }
+  if (!hasModelFor(type)) {
+    return res.status(404).json({ error: "no model defined for that prop type" });
+  }
+
+  try {
+    const buffer = await getModel(type);
+    res.set("Content-Type", "model/gltf-binary");
+    res.set("Cache-Control", "public, max-age=604800");
+    res.send(buffer);
+  } catch (err) {
+    // A missing key is an expected configuration state, not a server fault.
+    if (!modelGenEnabled) {
+      return res.status(503).json({ error: "model generation disabled (no API key configured)" });
+    }
+    console.error("[GET /api/model] generation failed:", err);
+    res.status(502).json({ error: "model generation failed", detail: String(err.message || err) });
   }
 });
 

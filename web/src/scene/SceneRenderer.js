@@ -12,6 +12,7 @@ import {
 } from "./proceduralTexture.js";
 import { applyPropTexture } from "./propTextures.js";
 import { attachSprite, SPRITE_TYPES } from "./propSprites.js";
+import { attachModel } from "./propModels.js";
 import { buildScatter } from "./scatter.js";
 import { heightAt, seedFromScene } from "./terrain.js";
 
@@ -270,11 +271,15 @@ function buildProp(prop, mood) {
     }
   });
 
-  // Discrete objects become billboarded artwork; architectural pieces keep their
-  // geometry and just get a material texture. Both arrive asynchronously, so the prop
-  // renders immediately either way and upgrades in place when the image lands.
-  if (SPRITE_TYPES.has(prop.type)) attachSprite(group, prop.type);
-  else applyPropTexture(group, prop.type);
+  // Three tiers, best-effort and in order: a real 3D model if one has been generated,
+  // otherwise billboarded artwork, otherwise the primitive geometry built above with a
+  // material texture on it. Each upgrade happens in place when it arrives, so the prop
+  // is visible immediately and never blocks on the network.
+  (async () => {
+    if (await attachModel(group, prop.type)) return;
+    if (SPRITE_TYPES.has(prop.type)) await attachSprite(group, prop.type);
+    else applyPropTexture(group, prop.type);
+  })();
 
   return group;
 }
