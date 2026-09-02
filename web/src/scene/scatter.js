@@ -22,12 +22,14 @@ const DISTANT_INNER = GROUND_HALF_EXTENT + 6;
 const DISTANT_OUTER = GROUND_HALF_EXTENT + 30;
 const SPAWN_CLEAR_RADIUS = 9;
 
-// Population at scatter_density = 1. Actual counts scale down from here.
-const MAX_TUFTS = 420;
-const MAX_SHRUBS = 130;
-const MAX_STONES = 260;
-const MAX_CANOPY = 90;
-const MAX_DISTANT = 150;
+// Population at scatter_density = 1. Raised roughly in proportion to the world's area
+// after GROUND_HALF_EXTENT went 20 -> 34; the old counts spread over the larger plane
+// read as a bigger empty field rather than a bigger place.
+const MAX_TUFTS = 1100;
+const MAX_SHRUBS = 340;
+const MAX_STONES = 680;
+const MAX_CANOPY = 220;
+const MAX_DISTANT = 260;
 
 // Words in the environment description that imply an enclosed space, where a distant
 // treeline or skyline would be nonsense.

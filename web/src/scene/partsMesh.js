@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { MIRROR_AXES } from "iwg-shared";
+import { materialTexture } from "./materialTextures.js";
 
 // Builds real 3D geometry from the parts the model composed.
 //
@@ -74,6 +75,10 @@ function buildGeometry(part) {
   }
 }
 
+// Roughly how many times a texture tiles across a metre of surface. Wood grain and
+// masonry read at their real scale rather than being stretched over whole objects.
+const TEXTURE_DENSITY = 0.6;
+
 function buildMaterial(part) {
   const material = new THREE.MeshStandardMaterial({
     color: new THREE.Color(part.color || "#8a8578"),
@@ -84,6 +89,27 @@ function buildMaterial(part) {
     // where facets on a body or a fruit look like a modelling mistake.
     flatShading: !part.smooth,
   });
+
+  // Surface material, fetched and cached by its description. Flat-coloured parts made
+  // objects hard to identify — a crate was a brown box and a camel a pile of tan blobs.
+  // Grain, weave and pitting are most of what makes a shape read as a specific thing.
+  if (part.material) {
+    const [sx, sy] = (part.size || [1, 1, 1]).map(clampSize);
+    materialTexture(part.material).then((tex) => {
+      if (!tex) return;
+      // Clone per material so each part can tile at a scale suited to its own size.
+      const own = tex.clone();
+      own.needsUpdate = true;
+      own.repeat.set(
+        Math.max(1, Math.round(sx * TEXTURE_DENSITY)),
+        Math.max(1, Math.round(sy * TEXTURE_DENSITY))
+      );
+      material.map = own;
+      // Let the texture's own colour dominate, keeping a little of the authored tint.
+      material.color.lerp(new THREE.Color(0xffffff), 0.55);
+      material.needsUpdate = true;
+    });
+  }
   if (part.emissive) {
     material.emissive = new THREE.Color(part.emissive);
     material.emissiveIntensity = 1.1;

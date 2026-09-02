@@ -30,8 +30,12 @@ const GEOMETRY_TOOL = {
 
 const SYSTEM_PROMPT = `You build 3D game objects out of primitive shapes, like assembling them from blocks.
 
-Given a description, emit the object's geometry via the emit_geometry tool. Aim for a
-recognisable SILHOUETTE using 4-12 parts — not a detailed sculpt.
+Given a description, emit the object's geometry via the emit_geometry tool.
+
+Use 10-24 parts. Get the SILHOUETTE right first, then spend the remaining parts on the
+details that identify the thing — a camel's nostrils and knees and tail-tuft, a stall's
+awning poles and hanging scales and stacked crates. Objects built from bulk alone are
+unreadable: someone should be able to name it from across the room.
 
 Coordinates are metres, local to the object: y=0 is the ground, y is up, and the object
 should be centred on x=z=0. Reference sizes: a person ~1.8 tall, a table ~0.8, a doorway
@@ -61,9 +65,16 @@ USE MIRROR AND REPEAT. They are how you get detail without spending parts:
 Spend the parts you save on character: the thing that makes an object recognisable is
 usually one specific detail, not more bulk.
 
-Give each part a color suited to its material, emissive for anything that glows (flame,
-screens, runes, eyes), and smooth: true for organic parts — a faceted animal body looks
-like a mistake, while faceted stone looks carved. rot is in degrees.
+GIVE EVERY PART A material. Two to four words naming the actual surface — "rough oak
+planks", "pitted wrought iron", "coarse camel hide", "glazed blue tile", "sun-bleached
+canvas". A tiling texture is generated from it and applied to the part. This matters more
+than almost anything else you do here: a flat-coloured shape is hard to identify, and the
+same shape with grain or weave or rust on it reads immediately as what it is. Use the
+same wording for the same material across parts so it is generated once and shared.
+
+Also give each part a color that suits that material, emissive for anything that glows
+(flame, screens, runes, eyes), and smooth: true for organic parts — a faceted animal body
+looks like a mistake, while faceted stone looks carved. rot is in degrees.
 
 Build what the description actually says. A camel is a capsule body, a neck, a head, one
 mirrored leg and two humps — not a brown box. A cartwheel is a torus with one spoke

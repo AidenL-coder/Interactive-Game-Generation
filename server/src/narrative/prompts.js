@@ -88,8 +88,10 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
       "`visibility` / `scatter_density` in 0-1. These drive the actual lighting and fog, " +
       "so a midnight cellar and a noon desert should look genuinely different.\n" +
       `- props: 5-14 items, x and z within [-${GROUND_HALF_EXTENT}, ${GROUND_HALF_EXTENT}] ` +
-      "(the walkable ground plane's half-extent), spaced so the player can walk between " +
-      "them\n" +
+      "(the walkable ground plane's half-extent). USE THAT WHOLE SPACE — spread things " +
+      "across it in clusters with real distance between them, so the place feels like " +
+      "somewhere you walk through rather than a huddle of objects in an empty field. " +
+      "Put something at the far edges worth walking to\n" +
       "- every prop needs a stable `id` (e.g. 'altar_01'), a specific visual `label` " +
       `(the artwork is generated from it), and a \`form\` ∈ {${PROP_FORMS.join(", ")}} ` +
       "describing how it occupies space\n" +

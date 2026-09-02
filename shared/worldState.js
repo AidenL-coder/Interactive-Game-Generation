@@ -64,7 +64,11 @@ export const PART_SHAPES = [
 // becomes two, one wing becomes a pair, one buttress becomes a colonnade's worth.
 export const MIRROR_AXES = ["x", "z", "xz"];
 
-export const MAX_PARTS = 14;
+// Raised from 14. Objects were coming out unreadable — a camel as a pile of tan blobs —
+// because the budget went on bulk with nothing left for the details that identify a
+// thing. Generation time isn't a constraint here, and mirror/repeat multiply this
+// further.
+export const MAX_PARTS = 26;
 
 const PART_SCHEMA = {
   type: "object",
@@ -141,6 +145,15 @@ const PART_SCHEMA = {
       required: ["count"],
     },
     color: { type: "string", description: "Hex colour, e.g. '#6b5a3a'." },
+    material: {
+      type: "string",
+      description:
+        "What this part's surface is made of, in 2-4 words — 'rough oak planks', " +
+        "'pitted iron', 'coarse camel hide', 'glazed blue tile', 'woven wool'. A tiling " +
+        "texture is generated from this and applied to the part, which is most of what " +
+        "makes an object readable as the thing it is rather than a coloured shape. " +
+        "Reuse the same wording for the same material so it is generated once.",
+    },
     roughness: { type: "number", minimum: 0, maximum: 1 },
     metalness: { type: "number", minimum: 0, maximum: 1 },
     smooth: {
@@ -168,9 +181,10 @@ export const PARTS_SCHEMA = {
   items: PART_SCHEMA,
 };
 
-// Half-extent of the walkable ground plane, in world units. Prop x/z must fall within
+// Half-extent of the walkable ground plane, in world units. Raised from 20: a 40x40
+// world read as cramped, with everything huddled in the middle of an empty plane. Prop x/z must fall within
 // [-GROUND_HALF_EXTENT, GROUND_HALF_EXTENT] so the renderer never has to clip/clamp.
-export const GROUND_HALF_EXTENT = 20;
+export const GROUND_HALF_EXTENT = 34;
 
 export const MIN_PROPS = 5;
 export const MAX_PROPS = 14;

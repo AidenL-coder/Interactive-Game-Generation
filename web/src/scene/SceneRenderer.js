@@ -87,19 +87,27 @@ function chooseVantage(props) {
   const fallback = { x: 0, z: GROUND_HALF_EXTENT * 0.6 };
   if (!props?.length) return { position: fallback, target: { x: 0, z: 0 } };
 
-  const target = {
+  // Frame ONE thing close up rather than fitting the whole scene in shot. Standing back
+  // far enough to see everything made 2-metre objects into miniatures on a wide empty
+  // plane — the scene was legible and lifeless. Opening a few paces from something
+  // specific reads as standing in a place instead of surveying it, and the rest of the
+  // world is behind it as depth. A character is the most interesting thing to open on;
+  // failing that, whatever sits nearest the middle of the action.
+  const centre = {
     x: props.reduce((s, p) => s + p.x, 0) / props.length,
     z: props.reduce((s, p) => s + p.z, 0) / props.length,
   };
+  const focus =
+    props.find((p) => p.character) ||
+    [...props].sort(
+      (a, b) =>
+        Math.hypot(a.x - centre.x, a.z - centre.z) - Math.hypot(b.x - centre.x, b.z - centre.z)
+    )[0];
 
-  // Stand back in proportion to how spread out the scene actually is. A fixed 13m made
-  // a tight cluster of objects look like a distant toy set, and would have cropped a
-  // sprawling one. Framed to the spread, plus a little breathing room.
-  const spread = Math.max(
-    ...props.map((p) => Math.hypot(p.x - target.x, p.z - target.z)),
-    2
-  );
-  const distance = THREE.MathUtils.clamp(spread * 1.15 + 4, 7, 20);
+  const target = { x: focus.x, z: focus.z };
+
+  // Close enough that the subject has presence, far enough to see it whole.
+  const distance = 7 * (focus.scale && focus.scale > 0 ? focus.scale : 1);
 
   const limit = GROUND_HALF_EXTENT - 2;
   let best = null;
@@ -118,6 +126,7 @@ function chooseVantage(props) {
 
     let score = 0;
     for (const p of props) {
+      if (p === focus) continue; // the subject is not in its own way
       const px = p.x - x;
       const pz = p.z - z;
 
@@ -725,8 +734,12 @@ export class Scene3D {
 
       const tex = new THREE.CanvasTexture(bitmap);
       tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      tex.repeat.set(4, 4);
+      // At 4 repeats the texture was stretched over ~25 metres per tile, which is why
+      // the ground read as a blurry wash rather than a surface. Roughly 4m per tile.
+      const tiles = Math.round(((GROUND_HALF_EXTENT * 2 + HORIZON_MARGIN) / 4));
+      tex.repeat.set(tiles, tiles);
       tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
       tex.needsUpdate = true;
 
       groundMat.map?.dispose();
