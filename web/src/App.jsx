@@ -18,6 +18,7 @@ export default function App() {
   const [speech, setSpeech] = useState(null);
   const [focusLabel, setFocusLabel] = useState(null);
   const [prewarm, setPrewarm] = useState(null); // asset generation progress before entry
+  const [nearbyIds, setNearbyIds] = useState([]); // props the player is standing at
 
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
@@ -65,9 +66,11 @@ export default function App() {
     if (!scene3d) return undefined;
     scene3d.onSay = setSpeech;
     scene3d.onFocus = setFocusLabel;
+    scene3d.onNearby = setNearbyIds;
     return () => {
       scene3d.onSay = null;
       scene3d.onFocus = null;
+      scene3d.onNearby = null;
     };
   }, [phase]);
 
@@ -107,9 +110,13 @@ export default function App() {
       // world that appears finished is worth far more than one that starts sooner and
       // materialises around the player over the following minute — especially when the
       // first thing anyone sees is the opening shot.
-      setPrewarm({ done: 0, total: 1, label: "reading the world" });
+      const opening = {
+        objective: result.worldState?.objective,
+        narrative: result.worldState?.narrative,
+      };
+      setPrewarm({ done: 0, total: 1, label: "reading the world", ...opening });
       await prewarmScene(result.worldState?.scene, (done, total, label) =>
-        setPrewarm({ done, total, label })
+        setPrewarm({ done, total, label, ...opening })
       );
       setPrewarm(null);
 
@@ -191,6 +198,7 @@ export default function App() {
 
       <ChoicePanel
         worldState={session?.worldState}
+        nearbyIds={nearbyIds}
         onChoose={handleChoose}
         busy={busy || playing || Boolean(session?.worldState?.ending)}
       />

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 // Below this the toggle would be noise, so it isn't shown at all.
 const COLLAPSE_THRESHOLD = 260;
 
-export default function ChoicePanel({ worldState, onChoose, busy }) {
+export default function ChoicePanel({ worldState, onChoose, busy, nearbyIds = [] }) {
   const [freeText, setFreeText] = useState("");
   const [expanded, setExpanded] = useState(false);
 
@@ -26,6 +26,9 @@ export default function ChoicePanel({ worldState, onChoose, busy }) {
     setFreeText("");
   }
 
+  const propsById = new Map((worldState.scene?.props || []).map((p) => [p.id, p]));
+  const near = new Set(nearbyIds);
+
   return (
     <div className={`choice-panel${expanded ? " expanded" : ""}`}>
       <div className="narrative-wrap">
@@ -42,11 +45,31 @@ export default function ChoicePanel({ worldState, onChoose, busy }) {
       </div>
 
       <div className="choice-buttons">
-        {(worldState.choices || []).map((c) => (
-          <button key={c.id} disabled={busy} onClick={() => onChoose({ choiceId: c.id })}>
-            {c.text}
-          </button>
-        ))}
+        {(worldState.choices || []).map((c) => {
+          // A located choice can only be taken from where it happens. Rather than
+          // hiding it, it's shown locked with the place named — so the world tells you
+          // where to go, and walking there is the act of choosing.
+          const gate = c.requires_near;
+          const locked = Boolean(gate) && !near.has(gate);
+          const target = gate ? propsById.get(gate) : null;
+
+          return (
+            <button
+              key={c.id}
+              className={locked ? "choice-locked" : undefined}
+              disabled={busy || locked}
+              title={locked && target ? `Walk to the ${target.label}` : undefined}
+              onClick={() => onChoose({ choiceId: c.id })}
+            >
+              {c.text}
+              {locked && (
+                <span className="choice-gate">
+                  go to {target?.label || "it"}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <form className="freetext-row" onSubmit={submitFreeText}>

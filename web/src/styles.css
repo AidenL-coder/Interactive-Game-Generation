@@ -448,3 +448,69 @@ button:disabled { opacity: 0.6; cursor: default; }
   color: #6f6a5e;
   text-transform: capitalize;
 }
+
+/* A choice tied to a place, seen from the wrong place. Shown rather than hidden, so the
+   world tells you where to go — walking there is how you take it. */
+.choice-buttons button.choice-locked {
+  opacity: 0.55;
+  border-style: dashed;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.choice-gate {
+  font-size: 0.7rem;
+  color: #d8b23c;
+  border: 1px solid rgba(216, 178, 60, 0.4);
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+/* The prewarm wait doubles as the story's opening, so it's typeset to be read. */
+.prewarm-eyebrow {
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6f6a5e;
+}
+.prewarm-objective {
+  margin: 6px 0 18px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #d8b23c;
+}
+.prewarm-narrative {
+  margin: 0 0 22px;
+  text-align: left;
+  line-height: 1.65;
+  color: #cfcabc;
+  max-height: 34vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+/* One-click premises, so nobody has to face an empty box in front of an audience. */
+.premise-examples {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: -4px;
+}
+.premise-examples-label {
+  font-size: 0.8rem;
+  color: #6f6a5e;
+}
+.premise-chip {
+  background: #1a1a1f;
+  border: 1px solid #33333c;
+  color: #cfcabc;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+.premise-chip:hover { background: #26262e; border-color: #4a4a56; color: #f4f1e8; }

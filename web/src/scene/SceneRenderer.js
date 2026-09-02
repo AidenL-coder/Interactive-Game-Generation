@@ -11,7 +11,7 @@ import { paletteOf, lightingOf, fogOf, groundColorOf } from "./palette.js";
 import { applyPropTexture } from "./propTextures.js";
 import { attachSprite } from "./propSprites.js";
 import { attachModel } from "./propModels.js";
-import { GEOMETRIC_FORMS, PASSABLE_FORMS } from "iwg-shared";
+import { GEOMETRIC_FORMS, PASSABLE_FORMS, INTERACT_RADIUS } from "iwg-shared";
 import { attachGeometry } from "./propGeometry.js";
 import { buildScatter } from "./scatter.js";
 import { heightAt, seedFromScene } from "./terrain.js";
@@ -312,6 +312,8 @@ export class Scene3D {
     this.onSay = null; // set by the UI to surface `say` action text
     this.onFocus = null; // set by the UI to surface the looked-at prop's label
     this.onInteract = null; // set by the UI; fired when the player presses E on a prop
+    this.onNearby = null; // set by the UI; receives the ids of props within reach
+    this._nearbyKey = "";
     this._focusLabel = null;
     this._focusProp = null;
     this._seed = 1;
@@ -789,9 +791,28 @@ export class Scene3D {
     this.camera.position.y += (target - this.camera.position.y) * Math.min(dt * 12, 1);
   }
 
+  // Which props the player is standing at. Choices can be gated on this, which is what
+  // makes walking somewhere an act of play rather than sightseeing.
+  _updateNearby() {
+    const { x, z } = this.camera.position;
+    const near = [];
+    for (const { prop } of this.propsById.values()) {
+      if (Math.hypot(prop.x - x, prop.z - z) <= INTERACT_RADIUS) near.push(prop.id);
+    }
+    // Only notify React when the set actually changes, not every frame.
+    const key = near.sort().join(",");
+    if (key !== this._nearbyKey) {
+      this._nearbyKey = key;
+      this.onNearby?.(near);
+    }
+  }
+
   _animate() {
     const dt = Math.min(this.clock.getDelta(), 0.1);
-    if (!this.playback) this._updateFocus();
+    if (!this.playback) {
+      this._updateFocus();
+      this._updateNearby();
+    }
 
     if (this.playback) {
       this._stepPlayback(dt);

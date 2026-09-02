@@ -321,10 +321,29 @@ const CHOICES_SCHEMA = {
   maxItems: MAX_CHOICES,
   items: {
     type: "object",
-    properties: { id: { type: "string" }, text: { type: "string" } },
+    properties: {
+      id: { type: "string" },
+      text: { type: "string" },
+      // What makes the 3D world load-bearing rather than decorative: a choice tied to a
+      // place can only be taken from that place, so walking there is the act of
+      // choosing it, not a separate activity happening alongside a menu.
+      requires_near: {
+        type: "string",
+        description:
+          "Optional prop id. The player must walk to this object before they can take " +
+          "this choice. Use it for anything physical and located — prising open a hatch, " +
+          "reading an inscription, speaking to someone across the room. Leave it off for " +
+          "choices that can be made from anywhere (thinking, calling out, leaving). " +
+          "Aim for roughly half the choices to be located.",
+      },
+    },
     required: ["id", "text"],
   },
 };
+
+// How close counts as "at" an object, in metres. Generous enough that the player doesn't
+// have to hunt for an exact spot, tight enough that they must actually go there.
+export const INTERACT_RADIUS = 4.5;
 
 // What turns this from an interactive story generator into a game: something to
 // achieve, visible movement toward it, and an ending you can reach or fail to reach.
@@ -614,7 +633,7 @@ function checkProps(props, violations, spatial, { path = "props" } = {}) {
 
 // `ended` relaxes the requirement: a story that has finished has no next choice, and
 // demanding one made generation fail at the exact moment a session reached its climax.
-function checkChoices(choices, violations, ended = false) {
+function checkChoices(choices, violations, ended = false, knownIds = null, spatial = null) {
   if (!Array.isArray(choices)) {
     if (!ended) violations.push("choices missing/not an array");
     return;
@@ -625,6 +644,12 @@ function checkChoices(choices, violations, ended = false) {
   }
   choices.forEach((c, i) => {
     if (!c?.id || !c?.text) violations.push(`choices[${i}] missing id/text`);
+    // A choice gated on a prop that doesn't exist is unreachable — the player could
+    // never satisfy it — so it counts as a dangling reference like any other.
+    if (c?.requires_near && knownIds && !knownIds.has(c.requires_near)) {
+      violations.push(`choices[${i}] requires_near unknown prop '${c.requires_near}'`);
+      if (spatial) spatial.danglingRefs++;
+    }
   });
 }
 
@@ -685,7 +710,7 @@ export function validateWorldState(ws) {
     ids = checkProps(scene.props, violations, spatial, { path: "scene.props" });
   }
 
-  checkChoices(ws.choices, violations, Boolean(ws.ending));
+  checkChoices(ws.choices, violations, Boolean(ws.ending), ids, spatial);
   checkAgentActions(ws.agent_actions, ids, violations, spatial);
 
   return { valid: violations.length === 0, violations, spatial };
@@ -808,7 +833,7 @@ export function validateDeltaTurn(turn, knownPropIds = []) {
     }
   }
 
-  checkChoices(turn.choices, violations, Boolean(turn.ending));
+  checkChoices(turn.choices, violations, Boolean(turn.ending), idsAfter, spatial);
   checkAgentActions(turn.agent_actions, idsAfter ?? new Set(), violations, spatial);
 
   return { valid: violations.length === 0, violations, spatial };

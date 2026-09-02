@@ -99,6 +99,11 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
       "- choices: 2-4 concrete, distinct actions the player can take next. A single " +
       "choice is allowed only at a climax where there is genuinely one thing left to " +
       "do, and none at all only on the turn the story ends\n" +
+      "- choices.requires_near: set this to a prop's id for any choice that happens AT " +
+      "something — prising open a hatch, reading an inscription, speaking to someone. " +
+      "The player must walk there to take it, which is what makes the space matter. " +
+      "Aim for about half the choices to be located, and leave the rest free so they " +
+      "always have something they can do from where they stand\n" +
       "- narrative: 2-4 short second-person paragraphs describing the current beat\n" +
       // Displayed to the player as a status panel. Without visible, changing stakes a
       // choice has no felt consequence, however good the prose is.
