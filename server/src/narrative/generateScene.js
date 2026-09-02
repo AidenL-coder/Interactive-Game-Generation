@@ -89,6 +89,25 @@ function mergeState(previous, incoming) {
   return { ...(previous || {}), ...(incoming || {}) };
 }
 
+// The prompt asks for roughly half the choices to be tied to a place; in practice the
+// model gates all of them. That leaves a player who is standing in the wrong spot with
+// nothing they can do but walk, which is herding rather than choosing. Freeing one
+// choice guarantees there is always an option available from where they stand.
+//
+// Repaired rather than rejected: this is a matter of degree, not a malformed turn.
+function ensureUngatedChoice(turn) {
+  const choices = turn.choices;
+  if (!Array.isArray(choices) || choices.length < 2) return turn;
+  if (choices.some((c) => !c.requires_near)) return turn;
+
+  // Free the last one — the model tends to order choices by salience, so the earlier
+  // ones are the more deliberate hooks.
+  const freed = choices.map((c, i) =>
+    i === choices.length - 1 ? { ...c, requires_near: undefined } : c
+  );
+  return { ...turn, choices: freed };
+}
+
 function propIdsAfter(turn, currentProps) {
   if (turn.scene?.props) return turn.scene.props.map((p) => p.id);
   const ids = new Set(currentProps.map((p) => p.id));
@@ -236,9 +255,9 @@ export async function generateScene({
     }
 
     if (check.valid) {
-      worldState = usingDelta
-        ? materializeDeltaTurn(candidate, lastWorldState)
-        : candidate;
+      worldState = ensureUngatedChoice(
+        usingDelta ? materializeDeltaTurn(candidate, lastWorldState) : candidate
+      );
       worldState.state_updates = mergeState(
         lastWorldState?.state_updates,
         worldState.state_updates

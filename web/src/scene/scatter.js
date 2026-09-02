@@ -175,9 +175,6 @@ export function buildScatter(scene, seed, spawn = { x: 0, z: 0 }) {
       const canopy = instanced(makeTreeGeometry(), plantColor.clone().multiplyScalar(0.6), canopyCount);
       placeInstances(canopy, canopyCount, rng, seed, props, spawn, { size: [1.0, 1.8], pad: 5.5 });
       group.add(canopy);
-      // Art comes from what the model said grows here, not a hardcoded tree — otherwise
-      // an overgrown space station sprouts oak trees.
-      upgradeCanopyToBillboards(group, canopy, env?.scatter_cover || env?.ground_cover);
     }
   }
 
@@ -191,56 +188,6 @@ export function buildScatter(scene, seed, spawn = { x: 0, z: 0 }) {
   }
 
   return group;
-}
-
-// Replaces the placeholder cone forest with billboards carrying the same painted tree
-// artwork the props use, so background and foreground don't read as two different games.
-// Imported lazily to avoid a circular import with propSprites.
-async function upgradeCanopyToBillboards(group, placeholder, cover) {
-  const { propSprite } = await import("./propSprites.js");
-  const subject = cover?.trim()
-    ? `a large clump of ${cover}, growing tall`
-    : "a full leafy tree with a thick trunk";
-  const loaded = await propSprite("tall", subject);
-  if (!loaded || !placeholder.parent) return;
-
-  const count = placeholder.count;
-  const a = new THREE.PlaneGeometry(1, 1);
-  a.translate(0, 0.5, 0);
-  const b = a.clone();
-  b.rotateY(Math.PI / 2);
-
-  const mesh = new THREE.InstancedMesh(
-    mergeGeometries([a, b], false),
-    new THREE.MeshStandardMaterial({
-      map: loaded.texture,
-      transparent: true,
-      alphaTest: 0.4,
-      side: THREE.DoubleSide,
-      roughness: 0.9,
-      emissive: 0x0a0f08,
-    }),
-    count
-  );
-  mesh.receiveShadow = true;
-
-  const m = new THREE.Matrix4();
-  const pos = new THREE.Vector3();
-  const quat = new THREE.Quaternion();
-  const scl = new THREE.Vector3();
-  for (let i = 0; i < count; i++) {
-    placeholder.getMatrixAt(i, m);
-    m.decompose(pos, quat, scl);
-    const height = scl.y * 3.2;
-    m.compose(pos, quat, new THREE.Vector3(height * loaded.aspect, height, height * loaded.aspect));
-    mesh.setMatrixAt(i, m);
-  }
-  mesh.instanceMatrix.needsUpdate = true;
-
-  group.add(mesh);
-  group.remove(placeholder);
-  placeholder.geometry.dispose();
-  placeholder.material.dispose();
 }
 
 // Far enough out that fog carries most of the effect and the band stays small on screen.

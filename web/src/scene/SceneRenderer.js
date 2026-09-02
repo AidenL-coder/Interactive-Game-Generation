@@ -120,14 +120,21 @@ function chooseVantage(props) {
     for (const p of props) {
       const px = p.x - x;
       const pz = p.z - z;
+
+      // Standing room, checked in every direction. Scoring only what lay between the
+      // camera and the subject let a large object beside or behind the camera swallow
+      // it — repeatedly the opening shot was taken from inside an awning. A prop's
+      // scale matters here: a scaled-up object needs proportionally more clearance.
+      const clearance = Math.hypot(px, pz);
+      const bulk = 2.5 * (p.scale && p.scale > 0 ? p.scale : 1);
+      if (clearance < bulk) score -= 8 * (1 - clearance / bulk);
+
       const along = px * ux + pz * uz; // distance along the view direction
       if (along < 0 || along > len) continue; // behind us, or past the subject
       const perp = Math.abs(px * uz - pz * ux); // sideways offset from the sight line
       // Anything close to the sight line and close to the camera is an obstruction;
       // the same object far away is just part of the scene.
       if (perp < 2.5) score -= (len - along) / len;
-      // A little standing room matters too.
-      if (along < 3 && perp < 2) score -= 2;
     }
     if (score > bestScore) {
       bestScore = score;

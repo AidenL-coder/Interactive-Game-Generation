@@ -433,7 +433,11 @@ export const WORLD_STATE_TOOL = {
       ending: ENDING_SCHEMA,
       state_updates: STATE_UPDATES_SCHEMA,
     },
-    required: ["narrative", "scene"],
+    // choices stays required here even though validation lets an ENDING turn omit it.
+    // Dropping it from this list told the model choices were optional on every turn,
+    // and it promptly started omitting them mid-story. The schema states the intent;
+    // validateWorldState is the one that knows about endings.
+    required: ["narrative", "scene", "choices"],
   },
 };
 
@@ -508,7 +512,9 @@ export const WORLD_STATE_DELTA_TOOL = {
       ending: ENDING_SCHEMA,
       state_updates: STATE_UPDATES_SCHEMA,
     },
-    required: ["narrative"],
+    // Same reasoning as above: required in the schema, relaxed for endings in
+    // validateDeltaTurn.
+    required: ["narrative", "choices"],
   },
 };
 
