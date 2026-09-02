@@ -27,12 +27,14 @@ export default function StatusPanel({ worldState, turnIndex }) {
     ([k, v]) => !HIDDEN_KEYS.has(k) && v !== null && v !== undefined && v !== ""
   );
 
-  const scene = worldState?.scene;
+  // The scene names itself now, rather than being labelled from a fixed biome/mood/time
+  // vocabulary that no longer exists.
+  const place = worldState?.scene?.environment?.description;
 
   return (
     <div className="status-panel">
       <div className="status-scene">
-        {scene ? `${scene.biome} · ${scene.mood} · ${scene.time_of_day}` : "—"}
+        <span className="status-place">{place || "—"}</span>
         <span className="status-turn">Turn {turnIndex ?? 0}</span>
       </div>
 

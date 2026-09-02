@@ -249,14 +249,23 @@ button:disabled { opacity: 0.6; cursor: default; }
   max-width: 260px;
   pointer-events: none;
 }
+/* The place description is a full authored phrase now, not three enum words, so it
+   wraps and is clamped rather than forced onto one line. */
 .status-scene {
   color: #b8b3a4;
-  text-transform: capitalize;
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 12px;
-  white-space: nowrap;
 }
+.status-place {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-transform: capitalize;
+}
+.status-turn { white-space: nowrap; }
 .status-turn { color: #6f6a5e; }
 .status-stats {
   margin: 8px 0 0;
@@ -305,4 +314,58 @@ button:disabled { opacity: 0.6; cursor: default; }
   background: rgba(60, 10, 10, 0.85);
   padding: 8px 14px;
   border-radius: 6px;
+}
+
+/* Asset-generation progress, shown before the player enters the world. */
+.prewarm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 8, 11, 0.92);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 20;
+}
+.prewarm-card {
+  width: 100%;
+  max-width: 460px;
+  text-align: center;
+}
+.prewarm-card h2 {
+  margin: 0 0 6px;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+.prewarm-label {
+  margin: 0 0 18px;
+  color: #d8b23c;
+  font-size: 0.9rem;
+  min-height: 1.2em;
+  /* Labels are authored descriptions and can be long. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prewarm-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: #26262e;
+  overflow: hidden;
+}
+.prewarm-fill {
+  height: 100%;
+  background: #d8b23c;
+  transition: width 0.3s ease;
+}
+.prewarm-count {
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+  color: #b8b3a4;
+}
+.prewarm-note {
+  margin: 14px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #6f6a5e;
 }

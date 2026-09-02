@@ -186,12 +186,25 @@ export async function generateScene({
   for (; attempts < MAX_GENERATION_ATTEMPTS; attempts++) {
     response = await anthropic.messages.create({
       model: CLAUDE_MODEL,
-      max_tokens: 2048,
+      // The authored-environment schema is far larger than the old enum one: a palette,
+      // descriptions, and up to 14 props each carrying a full sentence of label. At 2048
+      // the tool call was being truncated mid-object, which surfaced as the baffling
+      // "scene missing/not an object" rather than as an obvious truncation error.
+      max_tokens: 8000,
       system,
       messages,
       tools: [tool],
       tool_choice: { type: "tool", name: tool.name },
     });
+
+    // Truncation produces a half-written object whose validation errors describe
+    // symptoms rather than the cause, so name it explicitly.
+    if (response.stop_reason === "max_tokens") {
+      console.warn(
+        `[generateScene] response hit max_tokens on attempt ${attempts + 1} — the tool ` +
+          "call was cut off mid-object; raise max_tokens if this recurs"
+      );
+    }
 
     const rawCandidate = extractToolInput(response);
     const knownIds = currentProps.map((p) => p.id);

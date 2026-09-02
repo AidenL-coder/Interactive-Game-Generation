@@ -153,9 +153,10 @@ function buildProp(prop, palette) {
     }
     case "wide": {
       // Architectural: keeps real geometry rather than becoming a billboard, since the
-      // player can walk around it.
-      const body = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.2, 1.6), mat(0.18));
-      body.position.y = 1.1;
+      // player can walk around it. Kept slab-like and modestly sized — at 2.6 x 2.2 x 1.6
+      // a scaled-up instance filled the frame with a featureless green wall.
+      const body = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.9, 0.7), mat(0.18));
+      body.position.y = 0.95;
       group.add(body);
       break;
     }

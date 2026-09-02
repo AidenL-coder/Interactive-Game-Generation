@@ -3,6 +3,8 @@ import { Scene3D } from "./scene/SceneRenderer.js";
 import StartScreen from "./ui/StartScreen.jsx";
 import ChoicePanel from "./ui/ChoicePanel.jsx";
 import StatusPanel from "./ui/StatusPanel.jsx";
+import PrewarmOverlay from "./ui/PrewarmOverlay.jsx";
+import { prewarmScene } from "./scene/prewarm.js";
 import { startSession, sendChoice } from "./api.js";
 
 export default function App() {
@@ -14,6 +16,7 @@ export default function App() {
   const [playing, setPlaying] = useState(false); // avatar is acting out the last choice
   const [speech, setSpeech] = useState(null);
   const [focusLabel, setFocusLabel] = useState(null);
+  const [prewarm, setPrewarm] = useState(null); // asset generation progress before entry
 
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
@@ -87,10 +90,22 @@ export default function App() {
     setError(null);
     try {
       const result = await startSession(payload);
+
+      // Generate every asset before showing the world. Art generation is slow, but a
+      // world that appears finished is worth far more than one that starts sooner and
+      // materialises around the player over the following minute — especially when the
+      // first thing anyone sees is the opening shot.
+      setPrewarm({ done: 0, total: 1, label: "reading the world" });
+      await prewarmScene(result.worldState?.scene, (done, total, label) =>
+        setPrewarm({ done, total, label })
+      );
+      setPrewarm(null);
+
       setSession(result);
       setPhase("playing");
     } catch (err) {
       setError(err.message);
+      setPrewarm(null);
     } finally {
       setBusy(false);
     }
@@ -111,7 +126,12 @@ export default function App() {
   }
 
   if (phase === "start") {
-    return <StartScreen onStart={handleStart} busy={busy} error={error} />;
+    return (
+      <>
+        <StartScreen onStart={handleStart} busy={busy} error={error} />
+        {prewarm && <PrewarmOverlay {...prewarm} />}
+      </>
+    );
   }
 
   return (

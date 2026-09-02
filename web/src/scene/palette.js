@@ -22,13 +22,25 @@ function colorOf(value, fallback) {
   }
 }
 
+// A light source's colour is a tint, not a dimmer. The model reasonably describes a
+// gloomy place with near-black palette entries, but multiplying a #243328 ambient by any
+// intensity still yields black — the scene renders as an unlit void. Lifting lightness
+// while preserving hue keeps the authored mood and keeps the world visible.
+function asLightTint(color, minLightness) {
+  const hsl = { h: 0, s: 0, l: 0 };
+  color.getHSL(hsl);
+  return new THREE.Color().setHSL(hsl.h, Math.min(hsl.s, 0.55), Math.max(hsl.l, minLightness));
+}
+
 export function paletteOf(environment) {
   const p = environment?.palette || {};
   return {
     ground: colorOf(p.ground, FALLBACK.ground),
     fog: colorOf(p.fog, FALLBACK.fog),
-    light: colorOf(p.light, FALLBACK.light),
-    ambient: colorOf(p.ambient, FALLBACK.ambient),
+    // Tints, so they get a lightness floor. Ground/fog/scatter are surface colours and
+    // are left exactly as authored.
+    light: asLightTint(colorOf(p.light, FALLBACK.light), 0.62),
+    ambient: asLightTint(colorOf(p.ambient, FALLBACK.ambient), 0.5),
     scatter: colorOf(p.scatter || p.ground, FALLBACK.scatter),
   };
 }

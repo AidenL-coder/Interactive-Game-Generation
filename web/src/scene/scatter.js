@@ -173,7 +173,9 @@ export function buildScatter(scene, seed, spawn = { x: 0, z: 0 }) {
       const canopy = instanced(makeTreeGeometry(), plantColor.clone().multiplyScalar(0.6), canopyCount);
       placeInstances(canopy, canopyCount, rng, seed, props, spawn, { size: [1.0, 1.8], pad: 5.5 });
       group.add(canopy);
-      upgradeCanopyToBillboards(group, canopy, seed);
+      // Art comes from what the model said grows here, not a hardcoded tree — otherwise
+      // an overgrown space station sprouts oak trees.
+      upgradeCanopyToBillboards(group, canopy, env?.scatter_cover || env?.ground_cover);
     }
   }
 
@@ -190,9 +192,12 @@ export function buildScatter(scene, seed, spawn = { x: 0, z: 0 }) {
 // Replaces the placeholder cone forest with billboards carrying the same painted tree
 // artwork the props use, so background and foreground don't read as two different games.
 // Imported lazily to avoid a circular import with propSprites.
-async function upgradeCanopyToBillboards(group, placeholder, seed) {
+async function upgradeCanopyToBillboards(group, placeholder, cover) {
   const { propSprite } = await import("./propSprites.js");
-  const loaded = await propSprite("tree", "a full leafy tree with a thick trunk");
+  const subject = cover?.trim()
+    ? `a large clump of ${cover}, growing tall`
+    : "a full leafy tree with a thick trunk";
+  const loaded = await propSprite("tall", subject);
   if (!loaded || !placeholder.parent) return;
 
   const count = placeholder.count;
