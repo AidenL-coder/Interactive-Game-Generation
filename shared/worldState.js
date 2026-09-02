@@ -275,6 +275,47 @@ const CHOICES_SCHEMA = {
   },
 };
 
+// What turns this from an interactive story generator into a game: something to
+// achieve, visible movement toward it, and an ending you can reach or fail to reach.
+// Kept to three flat fields on purpose — the one time a large nested addition was made
+// here, the model began silently dropping `scene` altogether.
+const OBJECTIVE_SCHEMA = {
+  type: "string",
+  description:
+    "The player's concrete goal, in one short sentence — 'find out what happened to " +
+    "the keeper before the tide comes in'. Set it on the FIRST turn and repeat it " +
+    "verbatim every turn after, unless the story genuinely redefines it.",
+};
+
+const PROGRESS_SCHEMA = {
+  type: "number",
+  minimum: 0,
+  maximum: 1,
+  description:
+    "How close the player is to the objective, 0 to 1. Move it meaningfully when they " +
+    "learn or achieve something real, and not at all when they don't — this is shown " +
+    "on screen, so it has to mean something.",
+};
+
+const ENDING_SCHEMA = {
+  type: "object",
+  description:
+    "Set ONLY on the turn the story actually ends. Stories should reach an ending in " +
+    "roughly 8-15 turns rather than continuing indefinitely — build toward it, then " +
+    "finish. Omit entirely while the story is still running.",
+  properties: {
+    outcome: {
+      type: "string",
+      enum: ["victory", "defeat", "bittersweet"],
+    },
+    epilogue: {
+      type: "string",
+      description: "2-3 paragraphs closing the story. Shown on the ending screen.",
+    },
+  },
+  required: ["outcome", "epilogue"],
+};
+
 const STATE_UPDATES_SCHEMA = {
   type: "object",
   description:
@@ -317,6 +358,9 @@ export const WORLD_STATE_TOOL = {
       },
       agent_actions: AGENT_ACTIONS_SCHEMA,
       choices: CHOICES_SCHEMA,
+      objective: OBJECTIVE_SCHEMA,
+      progress: PROGRESS_SCHEMA,
+      ending: ENDING_SCHEMA,
       state_updates: STATE_UPDATES_SCHEMA,
     },
     required: ["narrative", "scene", "choices"],
@@ -389,6 +433,9 @@ export const WORLD_STATE_DELTA_TOOL = {
       },
       agent_actions: AGENT_ACTIONS_SCHEMA,
       choices: CHOICES_SCHEMA,
+      objective: OBJECTIVE_SCHEMA,
+      progress: PROGRESS_SCHEMA,
+      ending: ENDING_SCHEMA,
       state_updates: STATE_UPDATES_SCHEMA,
     },
     required: ["narrative", "choices"],

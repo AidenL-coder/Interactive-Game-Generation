@@ -243,6 +243,16 @@ export async function generateScene({
         lastWorldState?.state_updates,
         worldState.state_updates
       );
+
+      // The objective is the player's whole reason to act, so it can't be allowed to
+      // blink out because one turn forgot to restate it. Progress likewise holds its
+      // last value rather than resetting to zero.
+      if (!worldState.objective?.trim() && lastWorldState?.objective) {
+        worldState.objective = lastWorldState.objective;
+      }
+      if (typeof worldState.progress !== "number" && typeof lastWorldState?.progress === "number") {
+        worldState.progress = lastWorldState.progress;
+      }
       break;
     }
     lastViolations = check.violations;

@@ -112,6 +112,28 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
         : "")
   );
 
+  // Without these this is an interactive story generator, not a game: the player has
+  // nothing to achieve, no way to tell whether a choice helped, and no ending to reach.
+  parts.push(
+    "THIS IS A GAME, NOT AN ENDLESS STORY. Give the player something to achieve and let " +
+      "them succeed or fail at it.\n" +
+      "- `objective`: on the FIRST turn, set a concrete goal in one sentence — something " +
+      "they could plausibly accomplish, with a reason it's urgent. Repeat it verbatim " +
+      "every turn afterwards so it stays stable on screen.\n" +
+      "- `progress`: 0 to 1, how close they are. Move it when they actually learn or " +
+      "achieve something, and leave it alone when they don't. It is displayed, so it has " +
+      "to be honest — a wasted turn should show as a wasted turn.\n" +
+      "- Choices must MATTER. Some should advance the objective, some should cost " +
+      "something real (time, trust, a resource in state_updates, safety), and it should " +
+      "be possible to make things worse. A choice with no downside isn't a choice.\n" +
+      "- Escalate. Raise tension as progress rises; don't just wander from scene to scene.\n" +
+      "- `ending`: when the objective is achieved, or is definitively lost, set it with " +
+      "an outcome and a closing epilogue. Aim to reach an ending in roughly 8-15 turns. " +
+      "Do NOT drift on forever; a story that can't end isn't a game.\n" +
+      "- Failure is allowed and makes success mean something. If the player has squandered " +
+      "their chances, let them lose."
+  );
+
   // Objects are built as actual geometry from primitives rather than fetched from any
   // library, so anything is expressible and nothing is pre-authored.
   parts.push(

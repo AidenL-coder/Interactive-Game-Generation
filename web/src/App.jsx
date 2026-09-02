@@ -4,6 +4,7 @@ import StartScreen from "./ui/StartScreen.jsx";
 import ChoicePanel from "./ui/ChoicePanel.jsx";
 import StatusPanel from "./ui/StatusPanel.jsx";
 import PrewarmOverlay from "./ui/PrewarmOverlay.jsx";
+import EndingScreen from "./ui/EndingScreen.jsx";
 import { prewarmScene } from "./scene/prewarm.js";
 import { startSession, sendChoice } from "./api.js";
 
@@ -88,6 +89,13 @@ export default function App() {
       scene3d.onInteract = null;
     };
   }, [phase, busy, playing, session?.sessionId]);
+
+  function handleRestart() {
+    setSession(null);
+    setPhase("start");
+    setError(null);
+    renderedTurnRef.current = null;
+  }
 
   async function handleStart(payload) {
     setBusy(true);
@@ -184,12 +192,22 @@ export default function App() {
       <ChoicePanel
         worldState={session?.worldState}
         onChoose={handleChoose}
-        busy={busy || playing}
+        busy={busy || playing || Boolean(session?.worldState?.ending)}
       />
 
       {/* Also shown mid-game: a turn that introduces new objects generates their art
           before the turn is revealed, so the world never assembles itself on screen. */}
       {prewarm && <PrewarmOverlay {...prewarm} />}
+
+      {session?.worldState?.ending && (
+        <EndingScreen
+          ending={session.worldState.ending}
+          objective={session.worldState.objective}
+          turnIndex={session.turnIndex}
+          stats={session.worldState.state_updates}
+          onRestart={handleRestart}
+        />
+      )}
 
       {error && <p className="error floating-error">{error}</p>}
     </div>

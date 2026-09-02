@@ -369,3 +369,82 @@ button:disabled { opacity: 0.6; cursor: default; }
   line-height: 1.5;
   color: #6f6a5e;
 }
+
+/* Objective and honest progress — the reason to play, kept in view. */
+.status-objective {
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(58, 58, 68, 0.8);
+}
+.status-objective-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #6f6a5e;
+}
+.status-objective-text {
+  margin-top: 3px;
+  color: #f4f1e8;
+  line-height: 1.35;
+}
+.status-progress {
+  margin-top: 7px;
+  height: 3px;
+  border-radius: 2px;
+  background: #26262e;
+  overflow: hidden;
+}
+.status-progress-fill {
+  height: 100%;
+  background: #d8b23c;
+  transition: width 0.5s ease;
+}
+
+/* The story concluding — win, lose, or something in between. */
+.ending-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(6, 6, 9, 0.93);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 30;
+}
+.ending-card {
+  max-width: 620px;
+  text-align: center;
+}
+.ending-outcome {
+  font-size: 1.9rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.ending-victory .ending-outcome { color: #d8b23c; }
+.ending-defeat .ending-outcome { color: #c9705f; }
+.ending-bittersweet .ending-outcome { color: #9aa5c9; }
+
+.ending-objective {
+  margin: 6px 0 20px;
+  color: #8f8a7c;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+.ending-epilogue {
+  margin: 0 0 22px;
+  line-height: 1.65;
+  text-align: left;
+  white-space: pre-wrap;
+  max-height: 42vh;
+  overflow-y: auto;
+}
+.ending-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 22px;
+  font-size: 0.8rem;
+  color: #6f6a5e;
+  text-transform: capitalize;
+}

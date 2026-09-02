@@ -31,8 +31,28 @@ export default function StatusPanel({ worldState, turnIndex }) {
   // vocabulary that no longer exists.
   const place = worldState?.scene?.environment?.description;
 
+  // The objective is the reason to play at all, so it sits at the top of the panel with
+  // honest progress under it — a wasted turn should visibly be a wasted turn.
+  const objective = worldState?.objective;
+  const progress = typeof worldState?.progress === "number" ? worldState.progress : null;
+
   return (
     <div className="status-panel">
+      {objective && (
+        <div className="status-objective">
+          <div className="status-objective-label">Objective</div>
+          <div className="status-objective-text">{objective}</div>
+          {progress !== null && (
+            <div className="status-progress" title={`${Math.round(progress * 100)}% there`}>
+              <div
+                className="status-progress-fill"
+                style={{ width: `${Math.round(progress * 100)}%` }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="status-scene">
         <span className="status-place">{place || "—"}</span>
         <span className="status-turn">Turn {turnIndex ?? 0}</span>
