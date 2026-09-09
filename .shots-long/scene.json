@@ -1,0 +1,108 @@
+{
+  "viewport": {
+    "w": 1600,
+    "h": 900
+  },
+  "stageWidth": 2480,
+  "backdrop": {
+    "loaded": true,
+    "image": "url(\"blob:http://localhost:5173/20ac5314-d923-44d6-a563-21552ea76f00\")"
+  },
+  "actors": [
+    {
+      "id": "label_nearest",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": true,
+      "onScreen": true,
+      "left": 654,
+      "bottom": 657,
+      "w": 80,
+      "h": 108
+    },
+    {
+      "id": "tree_row_far",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 1313,
+      "bottom": 611,
+      "w": 102,
+      "h": 161
+    },
+    {
+      "id": "chapel_ruin",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": false,
+      "left": 2044,
+      "bottom": 584,
+      "w": 128,
+      "h": 172
+    },
+    {
+      "id": "gardener_woman",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 996,
+      "bottom": 711,
+      "w": 92,
+      "h": 254
+    },
+    {
+      "id": "sundial_broken",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 237,
+      "bottom": 730,
+      "w": 122,
+      "h": 214
+    },
+    {
+      "id": "PLAYER",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 653,
+      "bottom": 737,
+      "w": 183,
+      "h": 272
+    }
+  ],
+  "choices": [
+    {
+      "text": "Approach the old woman and ask who she is",
+      "locked": true
+    },
+    {
+      "text": "Examine the tin tag's ink more closely with the loupe",
+      "locked": false
+    },
+    {
+      "text": "Cross-reference the tree's tag against the priory ledger",
+      "locked": false
+    },
+    {
+      "text": "Head toward the smoke behind the ruined chapel",
+      "locked": false
+    },
+    {
+      "locked": false
+    }
+  ],
+  "objective": "Catalogue the orchard's trees before the sale-men arrive — and work out whose hand keeps labelling them.",
+  "progress": "5%",
+  "title": "The Unbroken Hand"
+}

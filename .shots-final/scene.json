@@ -1,0 +1,120 @@
+{
+  "viewport": {
+    "w": 1600,
+    "h": 900
+  },
+  "stageWidth": 2480,
+  "backdrop": {
+    "loaded": true,
+    "image": "url(\"blob:http://localhost:5173/d97858f3-8437-4a87-b89b-e632c5e4e2f8\")"
+  },
+  "actors": [
+    {
+      "id": "machine_07",
+      "anchor": "ground",
+      "placeholder": true,
+      "hasArt": false,
+      "inReach": false,
+      "onScreen": true,
+      "left": -194,
+      "bottom": 711,
+      "w": 216,
+      "h": 254
+    },
+    {
+      "id": "car_keys",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 265,
+      "bottom": 769,
+      "w": 92,
+      "h": 118
+    },
+    {
+      "id": "attendant_rosa",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 687,
+      "bottom": 692,
+      "w": 91,
+      "h": 241
+    },
+    {
+      "id": "window_front",
+      "anchor": "wall",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": false,
+      "left": -605,
+      "bottom": 619,
+      "w": 194,
+      "h": 248
+    },
+    {
+      "id": "vending_machines",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 1157,
+      "bottom": 641,
+      "w": 142,
+      "h": 203
+    },
+    {
+      "id": "sign_hanging",
+      "anchor": "hanging",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 314,
+      "bottom": 279,
+      "w": 92,
+      "h": 117
+    },
+    {
+      "id": "PLAYER",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 917,
+      "bottom": 737,
+      "w": 127,
+      "h": 272
+    }
+  ],
+  "choices": [
+    {
+      "text": "Ask Rosa if she saw who left the car and the laundry.",
+      "locked": true
+    },
+    {
+      "text": "Pick up the car keys and look them over.",
+      "locked": false
+    },
+    {
+      "text": "Crouch by machine seven and see what's actually inside.",
+      "locked": true
+    },
+    {
+      "text": "Go to the window and look at the abandoned car.",
+      "locked": false
+    },
+    {
+      "locked": false
+    }
+  ],
+  "objective": "Find out what happened to the owner of the abandoned keys before you have to lock up for the night.",
+  "progress": "5%",
+  "title": "The Night Cycle"
+}

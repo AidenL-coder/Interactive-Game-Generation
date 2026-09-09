@@ -1,0 +1,108 @@
+{
+  "viewport": {
+    "w": 1600,
+    "h": 900
+  },
+  "stageWidth": 2480,
+  "backdrop": {
+    "loaded": true,
+    "image": "url(\"blob:http://localhost:5173/2869c13d-4be7-4e4a-a038-166e0be975e6\")"
+  },
+  "actors": [
+    {
+      "id": "lantern_woman",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 205,
+      "bottom": 711,
+      "w": 99,
+      "h": 254
+    },
+    {
+      "id": "theodolite_case",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": true,
+      "onScreen": true,
+      "left": 692,
+      "bottom": 769,
+      "w": 210,
+      "h": 294
+    },
+    {
+      "id": "signpost_fork",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 1040,
+      "bottom": 730,
+      "w": 172,
+      "h": 267
+    },
+    {
+      "id": "depth_gauge_prop",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 1330,
+      "bottom": 692,
+      "w": 131,
+      "h": 193
+    },
+    {
+      "id": "hollow_water",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": false,
+      "left": 1857,
+      "bottom": 584,
+      "w": 118,
+      "h": 157
+    },
+    {
+      "id": "PLAYER",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 708,
+      "bottom": 737,
+      "w": 185,
+      "h": 272
+    }
+  ],
+  "choices": [
+    {
+      "text": "Ask Old Mirren why she carries a lit lantern in daylight.",
+      "locked": true
+    },
+    {
+      "text": "Examine the signpost and its overpainted road names.",
+      "locked": true
+    },
+    {
+      "text": "Check why the depth-gauge is reading forty fathoms on dry land.",
+      "locked": true
+    },
+    {
+      "text": "Set up the theodolite and take a first sighting down the valley.",
+      "locked": false
+    },
+    {
+      "locked": false
+    }
+  ],
+  "objective": "Survey the valley and produce one true map before the villagers' contradictions — or something worse — strand you inside it.",
+  "progress": "5%",
+  "title": "The Valley That Moves"
+}

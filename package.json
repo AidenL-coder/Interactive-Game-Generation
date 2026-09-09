@@ -11,9 +11,12 @@
   "scripts": {
     "dev:server": "npm run dev --workspace=server",
     "dev:web": "npm run dev --workspace=web",
-    "test": "node shared/worldState.test.mjs",
+    "test": "node shared/worldState.test.mjs && node shared/story2d.test.mjs && node server/src/narrative/partialJson.test.mjs && node web/src/stage/chromaKey.test.mjs",
     "eval": "node eval/score.mjs",
     "eval:judge": "node eval/judge.mjs",
     "eval:judge-batch": "node eval/judge-batch.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
   }
 }

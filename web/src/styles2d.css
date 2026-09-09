@@ -1,0 +1,1078 @@
+/* The 2D illustrated adventure.
+ *
+ * The art direction changes every game, so the interface deliberately does not: it is a
+ * quiet dark chrome that borrows one colour — --game-accent, set from the scene's own
+ * palette by Stage — so it sits with whatever has been painted behind it without
+ * competing. Panels are translucent and blurred rather than opaque, because the picture
+ * is the point and covering a third of it would waste the thing we spent a minute
+ * generating.
+ */
+
+:root {
+  --game-accent: #d8b23c;
+  --game-shadow: #14171b;
+  --panel: rgba(12, 13, 16, 0.72);
+  --panel-solid: #0f1013;
+  --hairline: rgba(255, 255, 255, 0.11);
+  --ink: #f1ede2;
+  --ink-dim: #a8a294;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+
+.game2d {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #07080a;
+  cursor: default;
+}
+
+/* ---- stage ------------------------------------------------------------- */
+
+.stage-container {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.stage-root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.stage-camera {
+  position: absolute;
+  top: 0;
+  left: 0;
+  will-change: transform;
+}
+
+.stage-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 900ms ease;
+}
+.stage-backdrop.loaded {
+  opacity: 1;
+}
+
+.stage-actors {
+  position: absolute;
+  inset: 0;
+}
+
+/* Light wash, atmosphere and vignette sit in viewport space, in front of the painting
+ * but behind the interface — they are the air between you and the scene, so they must
+ * not scroll with the camera. */
+.stage-light,
+.stage-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.stage-atmosphere {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+.stage-vignette {
+  background: radial-gradient(115% 88% at 50% 44%, transparent 42%, rgba(0, 0, 0, 0.55) 100%);
+}
+
+/* ---- actors ------------------------------------------------------------ */
+
+.stage-actor {
+  position: absolute;
+  width: var(--w, 80px);
+  height: var(--h, 160px);
+  transform: translate(-50%, -100%);
+  transform-origin: 50% 100%;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 500ms ease, left 700ms cubic-bezier(0.33, 1, 0.68, 1),
+    top 700ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+.stage-actor[data-anchor="hanging"] {
+  transform: translate(-50%, 0);
+  transform-origin: 50% 0;
+}
+.stage-actor[data-anchor="floating"],
+.stage-actor[data-anchor="wall"] {
+  transform: translate(-50%, -50%);
+}
+
+.stage-actor.entering,
+.stage-actor.leaving {
+  opacity: 0;
+}
+
+.actor-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  transform-origin: 50% 100%;
+  transform: scaleX(var(--flip, 1));
+  /* Distance haze. Far cut-outs are hazier and less saturated, which is a depth cue and
+   * also stops them reading as sharp stickers pasted onto a soft painting. */
+  filter: blur(calc(var(--haze, 0) * 1.4px)) saturate(calc(1 - var(--haze, 0) * 0.4))
+    brightness(calc(1 + var(--haze, 0) * 0.14)) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35));
+  animation: idle-sway var(--sway-duration, 5s) ease-in-out infinite alternate;
+  animation-delay: var(--sway-delay, 0s);
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+@keyframes idle-sway {
+  from {
+    transform: scaleX(var(--flip, 1)) rotate(calc(var(--sway-amount, 0.6deg) * -1));
+  }
+  to {
+    transform: scaleX(var(--flip, 1)) rotate(var(--sway-amount, 0.6deg));
+  }
+}
+
+.actor-art.ghost {
+  position: absolute;
+  inset: 0;
+  animation: none;
+  opacity: 1;
+  transition: opacity 850ms ease;
+}
+.stage-actor.repainted .actor-art.ghost {
+  opacity: 0;
+}
+
+.actor-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: -1%;
+  width: 68%;
+  height: 8%;
+  transform: translateX(-50%);
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+  filter: blur(2px);
+  pointer-events: none;
+}
+.stage-actor[data-anchor="hanging"] .actor-shadow,
+.stage-actor[data-anchor="floating"] .actor-shadow,
+.stage-actor[data-anchor="wall"] .actor-shadow {
+  display: none;
+}
+
+/* No artwork available: a solid silhouette in the scene's own accent reads as "something
+ * is standing there" rather than as a broken image. */
+.stage-actor.placeholder .actor-art {
+  display: none;
+}
+.stage-actor.placeholder::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--stage-accent, #d8b23c) 45%, #000) 0%,
+    color-mix(in srgb, var(--stage-shadow, #1a1f24) 85%, #000) 100%
+  );
+  border-radius: 42% 42% 12% 12% / 26% 26% 6% 6%;
+  opacity: 0.85;
+}
+
+.actor-name {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translate(-50%, -6px);
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  background: rgba(8, 9, 11, 0.82);
+  border: 1px solid var(--hairline);
+  color: var(--ink);
+  opacity: 0;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+  /* Names must stay legible whatever the actor's depth-haze is doing. */
+  filter: none;
+}
+.stage-actor:hover .actor-name,
+.stage-actor.in-reach .actor-name {
+  opacity: 1;
+}
+
+.stage-actor.in-reach .actor-art,
+.stage-actor:hover .actor-art {
+  filter: blur(calc(var(--haze, 0) * 1.4px)) saturate(calc(1 - var(--haze, 0) * 0.3))
+    brightness(calc(1.08 + var(--haze, 0) * 0.14))
+    drop-shadow(0 0 12px color-mix(in srgb, var(--stage-accent, #d8b23c) 70%, transparent))
+    drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35));
+}
+
+.stage-actor.interacted .actor-art {
+  animation: nudge 550ms ease;
+}
+@keyframes nudge {
+  0%, 100% { transform: scaleX(var(--flip, 1)) translateY(0); }
+  30% { transform: scaleX(var(--flip, 1)) translateY(-4%) rotate(1.5deg); }
+  60% { transform: scaleX(var(--flip, 1)) translateY(0) rotate(-1deg); }
+}
+
+/* ---- the player -------------------------------------------------------- */
+
+.stage-player {
+  pointer-events: none;
+  /* The player is driven frame by frame; a CSS position transition would fight it. */
+  transition: none;
+}
+.stage-player .actor-name { display: none; }
+
+.stage-player.walking .actor-art {
+  animation: walk 640ms ease-in-out infinite;
+}
+.stage-player.running .actor-art {
+  animation-duration: 380ms;
+}
+@keyframes walk {
+  0%   { transform: scaleX(var(--flip, 1)) translateY(0) rotate(-1.8deg); }
+  25%  { transform: scaleX(var(--flip, 1)) translateY(-1.8%) rotate(0deg); }
+  50%  { transform: scaleX(var(--flip, 1)) translateY(0) rotate(1.8deg); }
+  75%  { transform: scaleX(var(--flip, 1)) translateY(-1.8%) rotate(0deg); }
+  100% { transform: scaleX(var(--flip, 1)) translateY(0) rotate(-1.8deg); }
+}
+.stage-player.acting .actor-art {
+  animation: nudge 700ms ease;
+}
+
+/* Where you clicked, so a walk that takes six seconds still feels responsive at once. */
+.stage-walk-hint {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border-radius: 50%;
+  border: 2px solid var(--stage-accent, #d8b23c);
+  opacity: 0;
+  pointer-events: none;
+}
+.stage-walk-hint.ping {
+  animation: ping 520ms ease-out;
+}
+@keyframes ping {
+  from { opacity: 0.85; transform: scale(0.4); }
+  to { opacity: 0; transform: scale(1.6); }
+}
+
+/* ---- status ------------------------------------------------------------ */
+
+.status {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  pointer-events: none;
+}
+
+.status-main {
+  max-width: 420px;
+  padding: 11px 14px;
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+.status-title {
+  font-family: var(--serif);
+  font-size: 0.98rem;
+  letter-spacing: 0.04em;
+  color: var(--game-accent);
+  margin-bottom: 3px;
+}
+.status-objective {
+  font-size: 0.86rem;
+  line-height: 1.35;
+  color: var(--ink);
+  margin-bottom: 8px;
+}
+.status-progress {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.status-progress-fill {
+  height: 100%;
+  background: var(--game-accent);
+  border-radius: 2px;
+  transition: width 700ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+.status-meta {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.status-stats {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 46vw;
+}
+.status-stat {
+  padding: 7px 11px;
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  text-align: right;
+  min-width: 74px;
+}
+.status-stat dt {
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.status-stat dd {
+  margin: 2px 0 0;
+  font-size: 0.9rem;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- narrative --------------------------------------------------------- */
+
+.narrative {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Keep clear of the choice column on the right — prose running underneath the buttons
+   * was the first thing that looked broken once there was enough of both. */
+  padding: 46px clamp(24px, 30vw, 460px) 18px 24px;
+  background: linear-gradient(
+    to top,
+    rgba(6, 7, 9, 0.94) 0%,
+    rgba(6, 7, 9, 0.82) 45%,
+    rgba(6, 7, 9, 0) 100%
+  );
+  pointer-events: none;
+  transition: transform 400ms cubic-bezier(0.33, 1, 0.68, 1), opacity 300ms ease;
+}
+.narrative-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  max-width: 860px;
+  margin: 0 0 0 auto;
+}
+.narrative-body {
+  flex: 1;
+  min-width: 0;
+  max-width: 700px;
+  max-height: 30vh;
+  overflow-y: auto;
+  font-family: var(--serif);
+  font-size: 1.04rem;
+  line-height: 1.62;
+  color: var(--ink);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+  pointer-events: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+.narrative-body p {
+  margin: 0 0 0.72em;
+}
+.narrative-body p:last-child {
+  margin-bottom: 0;
+}
+.narrative.collapsed .narrative-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+
+.caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.16em;
+  background: var(--game-accent);
+  opacity: 0.85;
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink {
+  to { opacity: 0; }
+}
+
+.narrative-toggle {
+  position: absolute;
+  right: 20px;
+  top: 12px;
+  pointer-events: auto;
+  background: rgba(20, 22, 26, 0.8);
+  border: 1px solid var(--hairline);
+  color: var(--ink-dim);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.narrative-toggle:hover {
+  color: var(--ink);
+  border-color: var(--game-accent);
+}
+
+/* ---- speaker portrait -------------------------------------------------- */
+
+.speaker {
+  flex: none;
+  width: 118px;
+  pointer-events: none;
+  animation: rise 320ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+.speaker-frame {
+  width: 118px;
+  height: 118px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.04);
+  /* The portrait is a cut-out on transparency, so it needs a ground of its own or it
+   * reads as a floating head over the prose. */
+  box-shadow: inset 0 -40px 50px -30px rgba(0, 0, 0, 0.7);
+}
+.speaker-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  display: block;
+}
+.speaker-blank {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--game-accent) 30%, #000),
+    rgba(0, 0, 0, 0.6)
+  );
+}
+.speaker-name {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--game-accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .speaker { display: none; }
+}
+
+/* ---- choices ----------------------------------------------------------- */
+
+.choices {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+  max-width: min(420px, 42vw);
+  z-index: 5;
+}
+.choices.busy {
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+.choice {
+  /* Stacked, not inline: an inline badge squeezed the text into a four-line ribbon down
+   * the middle of the button. */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  text-align: right;
+  /* Choices sit over the busiest part of the painting, so they carry more ground than
+   * the other panels — at 0.72 they were washing out against light backdrops. */
+  background: rgba(10, 11, 14, 0.86);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--hairline);
+  border-left: 2px solid var(--game-accent);
+  border-radius: 8px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.choice:hover:not(:disabled) {
+  transform: translateX(-3px);
+  background: rgba(20, 22, 27, 0.86);
+  border-left-color: #fff;
+}
+.choice:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.choice.locked {
+  border-left-color: rgba(255, 255, 255, 0.25);
+  color: var(--ink-dim);
+}
+.choice.locked:hover:not(:disabled) {
+  border-left-color: var(--game-accent);
+  color: var(--ink);
+}
+.choice-gate {
+  flex: none;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--game-accent) 22%, transparent);
+  color: var(--game-accent);
+  white-space: nowrap;
+}
+.choice.ghost {
+  border-left-color: transparent;
+  color: var(--ink-dim);
+  font-size: 0.82rem;
+}
+
+.choice-free {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+.choice-free input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  background: rgba(12, 13, 16, 0.9);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.86rem;
+}
+.choice-free input:focus {
+  outline: none;
+  border-color: var(--game-accent);
+}
+.choice-free button {
+  padding: 9px 13px;
+  border-radius: 8px;
+  border: none;
+  background: var(--game-accent);
+  color: #16120a;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---- examine ----------------------------------------------------------- */
+
+.examine {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  z-index: 6;
+  max-width: min(380px, 42vw);
+  padding: 14px 16px;
+  background: var(--panel);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--hairline);
+  border-top: 2px solid var(--game-accent);
+  border-radius: 10px;
+  animation: rise 260ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.examine-name {
+  font-family: var(--serif);
+  font-size: 0.98rem;
+  color: var(--game-accent);
+  line-height: 1.35;
+}
+.examine-detail {
+  margin: 7px 0 12px;
+  font-family: var(--serif);
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.examine-actions {
+  display: flex;
+  gap: 7px;
+}
+.examine-actions button {
+  padding: 8px 13px;
+  border-radius: 7px;
+  border: none;
+  background: var(--game-accent);
+  color: #16120a;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.examine-actions button.ghost {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--ink-dim);
+  font-weight: 400;
+}
+.examine-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---- speech, skip, badges ---------------------------------------------- */
+
+.speech {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  z-index: 7;
+  max-width: min(520px, 62vw);
+  padding: 12px 18px;
+  background: rgba(10, 11, 14, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  line-height: 1.5;
+  color: var(--ink);
+  text-align: center;
+  animation: rise 220ms ease;
+}
+.speech.emote {
+  font-style: italic;
+  color: var(--ink-dim);
+  font-size: 0.92rem;
+}
+
+.skip {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 8;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: rgba(12, 13, 16, 0.85);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.skip:hover {
+  border-color: var(--game-accent);
+}
+
+.painting-badge {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  z-index: 8;
+  padding: 6px 13px;
+  border-radius: 999px;
+  background: rgba(12, 13, 16, 0.85);
+  border: 1px solid var(--hairline);
+  color: var(--ink-dim);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.controls-hint {
+  position: absolute;
+  left: 20px;
+  bottom: 6px;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.28);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.turn-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 9;
+  background: linear-gradient(90deg, transparent, var(--game-accent), transparent);
+  background-size: 40% 100%;
+  background-repeat: no-repeat;
+  animation: sweep 1.4s linear infinite;
+}
+@keyframes sweep {
+  from { background-position: -40% 0; }
+  to { background-position: 140% 0; }
+}
+
+.floating-error {
+  position: absolute;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 9px 15px;
+  border-radius: 8px;
+  background: rgba(60, 16, 16, 0.9);
+  border: 1px solid rgba(255, 120, 120, 0.35);
+  color: #ffd7d7;
+  font-size: 0.84rem;
+}
+
+/* ---- curtain ----------------------------------------------------------- */
+
+.curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: radial-gradient(120% 90% at 50% 40%, #14161b 0%, #06070a 100%);
+}
+.curtain-inner {
+  width: 100%;
+  max-width: 620px;
+}
+.curtain-title {
+  font-family: var(--serif);
+  font-size: 2.1rem;
+  line-height: 1.15;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+.curtain-title + h2 {
+  font-size: 0.76rem !important;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-dim) !important;
+  font-family: -apple-system, "Segoe UI", sans-serif !important;
+}
+.curtain-head h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.6rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+.curtain-medium {
+  margin: 7px 0 0;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--game-accent);
+  opacity: 0.85;
+}
+.curtain-prose {
+  margin: 26px 0;
+  padding: 20px 0;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  max-height: 44vh;
+  overflow-y: auto;
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  line-height: 1.65;
+  color: var(--ink);
+  white-space: pre-wrap;
+}
+.curtain-progress {
+  margin-top: 26px;
+}
+.curtain-bar {
+  height: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.curtain-bar-fill {
+  height: 100%;
+  background: var(--game-accent);
+  transition: width 400ms ease;
+}
+.curtain-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 9px;
+  font-size: 0.74rem;
+  color: var(--ink-dim);
+}
+.curtain-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.curtain-count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.curtain-error {
+  margin-top: 24px;
+}
+
+/* ---- ending ------------------------------------------------------------ */
+
+.ending {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(5, 6, 8, 0.93);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: rise 500ms ease;
+}
+.ending-inner {
+  width: 100%;
+  max-width: 620px;
+}
+.ending-outcome {
+  font-size: 0.76rem;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--game-accent);
+}
+.ending.defeat .ending-outcome { color: #d97070; }
+.ending.bittersweet .ending-outcome { color: #9aa8c4; }
+.ending-title {
+  margin: 8px 0 4px;
+  font-family: var(--serif);
+  font-size: 2rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+.ending-objective {
+  margin: 0 0 22px;
+  font-size: 0.88rem;
+  color: var(--ink-dim);
+}
+.ending-epilogue {
+  font-family: var(--serif);
+  font-size: 1.04rem;
+  line-height: 1.68;
+  color: var(--ink);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.ending-epilogue p { margin: 0 0 0.8em; }
+.ending-footer {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 22px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+/* ---- start screen ------------------------------------------------------ */
+
+.start2d {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  background: radial-gradient(120% 90% at 50% 30%, #16181d 0%, #06070a 100%);
+}
+.start2d-inner {
+  width: 100%;
+  max-width: 660px;
+}
+.start2d-head h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.9rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink);
+}
+.start2d-head p {
+  margin: 12px 0 28px;
+  font-size: 0.94rem;
+  line-height: 1.6;
+  color: var(--ink-dim);
+  max-width: 56ch;
+}
+
+.start2d .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.start2d .field > span {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.start2d textarea,
+.start2d input {
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--hairline);
+  border-radius: 9px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.94rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+.start2d textarea { font-family: var(--serif); }
+.start2d textarea:focus,
+.start2d input:focus {
+  outline: none;
+  border-color: var(--game-accent);
+}
+
+.start2d-examples {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin: 12px 0 22px;
+}
+.examples-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  margin-right: 2px;
+}
+.chip {
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: transparent;
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+.chip:hover {
+  color: var(--ink);
+  border-color: var(--game-accent);
+}
+
+.start2d-row {
+  display: flex;
+  gap: 12px;
+}
+.field-note {
+  margin: 8px 0 24px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.start2d-go {
+  width: 100%;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 9px;
+  background: var(--game-accent);
+  color: #16120a;
+  font: inherit;
+  font-size: 0.96rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: filter 140ms ease;
+}
+.start2d-go:hover:not(:disabled) { filter: brightness(1.08); }
+.start2d-go:disabled { opacity: 0.4; cursor: default; }
+
+.start2d .error,
+.curtain .error {
+  margin-top: 14px;
+  padding: 10px 13px;
+  border-radius: 8px;
+  background: rgba(60, 16, 16, 0.6);
+  border: 1px solid rgba(255, 120, 120, 0.3);
+  color: #ffd7d7;
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .status { flex-direction: column; }
+  .status-stats { justify-content: flex-start; max-width: none; }
+  .choices { max-width: calc(100vw - 40px); left: 20px; }
+  .examine { display: none; }
+  .start2d-row { flex-direction: column; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actor-art,
+  .stage-player.walking .actor-art,
+  .stage-player.running .actor-art {
+    animation: none !important;
+  }
+}

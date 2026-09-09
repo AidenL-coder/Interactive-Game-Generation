@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Backend for personalized interactive world generation: wraps the Claude API to turn source text + user profile + choice history into structured world-state JSON.",
   "scripts": {
-    "dev": "node --watch src/index.js",
+    "dev": "node --watch-path=src src/index.js",
     "start": "node src/index.js"
   },
   "dependencies": {

@@ -9,11 +9,16 @@ import { logGeneration } from "./logging/logger.js";
 import { getTexture, textureGenEnabled } from "./textures/textureGen.js";
 import { getModel, modelGenEnabled } from "./models/modelGen.js";
 import { getGeometry, geometryGenEnabled } from "./geometry/geometryGen.js";
+import { router as router2d } from "./routes2d.js";
 import { PROP_FORMS } from "iwg-shared";
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
+
+// The 2D illustrated adventure. This is the primary game; the 3D routes below are the
+// other arm of the engine ablation and are left intact.
+app.use("/api/2d", router2d);
 
 function publicSession(session) {
   return {

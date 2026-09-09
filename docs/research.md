@@ -97,8 +97,50 @@ avatar performs before control returns. These are emitted in **both** persistenc
 deliberately: confining them to `persistent` would confound the persistence axis with
 the presence of embodied action, making a result attributable to neither.
 
-This gives a 2×2×2×2 design (personalization × evolving × persistence × engine) for the
-eventual ablation table, with the template engine as the non-LLM floor.
+- **`engine`**: which presentation the same generated turn is rendered through. There are
+  now three: `2d` (the primary system — a painted side-on stage, `shared/story2d.js`),
+  `3d` (first-person walkable three.js, `shared/worldState.js`), and `template`, a fixed
+  non-LLM recipe that serves as the floor. The narrative engine, the logging, the spatial
+  counters and the proximity-gating mechanic are shared across `2d` and `3d`, which is
+  what makes them comparable: the contracts differ only in how a scene is described
+  (normalised x/depth on a stage vs. metres on a ground plane), not in what a turn is.
+
+This gives a 2×2×2×3 design (personalization × evolving × persistence × engine) for the
+eventual ablation table.
+
+### Art direction as a conditioning variable
+
+The 2D engine adds a component with no counterpart in the 3D one, and it turned out to
+matter more than expected. Before any image is generated, one model call fixes the game's
+**art direction** — medium, palette, light, edge quality — and that brief is prepended
+verbatim to every subsequent image prompt for the session (`server/src/art/styleBible.js`).
+
+Generating each asset from its own description with no shared brief produces assets that
+are individually good and collectively incoherent: a photoreal rock beside a cel-shaded
+person beside a watercolour door. This is straightforwardly ablatable (brief on/off, or
+brief re-worded per asset vs. held constant) and is measurable without a judge — style
+consistency across a scene's assets can be estimated from CLIP-embedding variance, or
+rated pairwise by a judge on "do these look like the same game".
+
+One incidental finding worth recording, because it cost a debugging cycle: the art
+direction can contain instructions that silently break the compositing pipeline. A brief
+specifying *"etched aquatint print with visible plate marks"* caused the image model to
+paint a framed rectangular artwork for every object rather than an isolated subject, so
+each prop rendered as a picture hanging in mid-air. Constraining the brief to mark-making
+(never presentation — no plate marks, paper edges, frames or margins) fixed it. The
+general form of the lesson: when a generated brief feeds a second generator, the first
+generator's output space has to be constrained by the second's requirements, and nothing
+in the pipeline announces the violation.
+
+### Latency and streaming
+
+`narrative` is deliberately the first property in both 2D tool schemas, and the server
+runs a tolerant partial-JSON reader over the streamed `input_json_delta` fragments
+(`server/src/narrative/partialJson.js`) to extract it while the rest of the turn is still
+being written. Measured across playthroughs, prose reaches the player in **6-9 seconds**
+against a 30-45 second full turn. This is a presentation change, not a generation one —
+the same turn is produced either way — so it does not confound any of the axes above,
+but it is the difference between a playable system and one nobody finishes a session of.
 
 ### Spatial consistency: a failure mode unique to this setting
 

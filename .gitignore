@@ -3,9 +3,18 @@ dist/
 .env
 *.local
 server/logs/*.jsonl
-server/.texture-cache/
 eval/out/
 .demo-logs/
 .DS_Store
+
+# Generated asset caches. Permanent by design and keyed by description, so they are worth
+# keeping locally between runs (a re-run of the same premise is instant) but they are
+# regenerable output, not source.
+server/.texture-cache/
 server/.model-cache/
 server/.geometry-cache/
+server/.art-cache/
+server/.style-cache/
+
+# Verification screenshots from scripts/playthrough.mjs
+.shots/

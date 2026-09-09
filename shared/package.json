@@ -3,5 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "worldState.js"
+  "main": "worldState.js",
+  "exports": {
+    ".": "./worldState.js",
+    "./story2d": "./story2d.js"
+  }
 }
