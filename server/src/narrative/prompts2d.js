@@ -55,6 +55,7 @@ export function buildSystemPrompt2D({
   ablation,
   bible,
   lastState,
+  prevStats,
   currentActors,
   turnIndex,
 }) {
@@ -211,10 +212,48 @@ export function buildSystemPrompt2D({
       "closing epilogue. Aim to reach an ending in 8-15 turns. A story that cannot end is " +
       "not a game.\n" +
       "- Failure is allowed and is what makes success mean anything. If they have " +
-      "squandered their chances, let them lose."
+      "squandered their chances, let them lose.\n" +
+      // Observed across playthroughs: the tense sessions were the ones that happened to
+      // grow a clock — a signal box counting toward 11:40, forty minutes left on a shift.
+      // The slack ones had stats that never bit, so examining everything and talking to
+      // everyone forever was strictly optimal and nothing the player did carried a cost.
+      // Requiring one stat to move against them every turn is what turns a set of things
+      // to read into a situation to get out of.
+      "- PRESSURE: exactly one of your `state_updates` is a force working against the " +
+      "player, and it moves EVERY SINGLE TURN whether or not they chose well — a clock " +
+      "running down, air or fuel draining, a tide coming in, suspicion rising, someone " +
+      "getting closer, a storm arriving. Give it a plain name AND a value a player can " +
+      "read at a glance with no legend: a clock time ('3:14 am'), a countdown ('40 min', " +
+      "'2 reels left'), or a short phrase ('rising fast'). Never an abstract fraction — " +
+      "'time to dawn: 0.70' is displayed verbatim on screen and means nothing to anyone " +
+      "reading it. Move it every turn without exception, and say in the prose " +
+      "when the player can feel it. When it runs out the story ends on it, whatever the " +
+      "progress bar says. This is what makes spending a turn cost something."
   );
 
   parts.push(pacingNote(turnIndex, lastState?.progress));
+
+  // A standing instruction to move the pressure every turn holds about half the time —
+  // measured across logged sessions, four of eight had a stat that actually moved on every
+  // turn, and one declared a clock and then froze it for thirteen turns running. Naming
+  // the specific stat that just failed to move is much harder to skim past than a rule
+  // stated once at the top of a long prompt.
+  const stalled = [];
+  if (prevStats && lastState?.state_updates) {
+    for (const [name, value] of Object.entries(lastState.state_updates)) {
+      if (name === "inferred_preferences") continue;
+      if (!(name in prevStats)) continue;
+      if (JSON.stringify(prevStats[name]) === JSON.stringify(value)) stalled.push(name);
+    }
+  }
+  if (stalled.length) {
+    parts.push(
+      `THESE DID NOT MOVE LAST TURN: ${stalled.join(", ")}. If one of them is your ` +
+        "pressure, move it this turn — a number that sits still two turns running is not " +
+        "pressure, it is decoration, and the player stops reading it. If it genuinely " +
+        "cannot move any further, then it has run out: say so and end the story on it."
+    );
+  }
 
   parts.push(
     "CHOICES: 2-4 concrete, distinct actions. One choice only at a genuine climax where " +
@@ -256,7 +295,19 @@ export function buildSystemPrompt2D({
     "STATE: `state_updates` tracks 2-4 concrete, player-visible stats fitting this story " +
       "(air, resolve, coin, suspicion, an inventory array, a named relationship). Short " +
       "snake_case names, the SAME names every turn, values changing as a consequence of " +
-      "what the player just did. These are shown on screen as their status." +
+      "what the player just did. These are shown on screen as their status.\n" +
+      // Measured across logged sessions: one orchard playthrough declared `resolve` and
+      // `daylight_remaining` and then never moved either, while minting fourteen one-shot
+      // clue_* booleans that each fired once and never again. The panel only has room for
+      // about five, so the flags shoved the pressure off the screen entirely — the player
+      // could not see the one number that was supposed to be closing in on them.
+      "HARD LIMIT: at most five tracked stats for the whole story, chosen on the first " +
+      "turn and kept by the same names to the end. Do NOT mint a new flag for each " +
+      "discovery — no `clue_ink_never_ages`, no `jig_repaired`, no `mystery_solved`. " +
+      "Things the player has learned belong in the prose, or folded into one count or one " +
+      "inventory array. A stat earns its place only if it can move both ways and the " +
+      "player would change their mind on seeing it. If you are not going to move a number " +
+      "again, do not track it." +
       (ablation?.personalization && ablation?.evolving
         ? "\nAlso `state_updates.inferred_preferences` every turn, as described above. Do " +
           "not omit it."

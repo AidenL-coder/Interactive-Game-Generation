@@ -10,6 +10,7 @@
 
 :root {
   --game-accent: #d8b23c;
+  --game-ink-on-accent: #16120a;
   --game-shadow: #14171b;
   --panel: rgba(12, 13, 16, 0.72);
   --panel-solid: #0f1013;
@@ -33,6 +34,13 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
+  /* Contain the actors' z-indexes. Depth sorting hands each actor an inline z-index of up
+   * to 1000 on the ground and 2200 hanging, and without a stacking context here those
+   * compete in the ROOT context against the interface, which tops out at 60. Every actor
+   * therefore painted over the choices, the examine bubble, the speech bubble and the
+   * ending screen — the visible symptom was a name tag sitting on top of the choice
+   * buttons, but by construction it was all of them. */
+  isolation: isolate;
 }
 
 .stage-root {
@@ -88,29 +96,34 @@
 
 /* ---- actors ------------------------------------------------------------ */
 
+/* Position is carried entirely by `transform`, written from Stage.js — including the
+ * anchor offset, which used to live here. Transform and the camera's transform resolve in
+ * the same compositing step, so an actor stays welded to the backdrop while the camera
+ * pans; positioning with left/top put them a pipeline stage apart and everything swam. */
 .stage-actor {
   position: absolute;
+  left: 0;
+  top: 0;
   width: var(--w, 80px);
   height: var(--h, 160px);
-  transform: translate(-50%, -100%);
   transform-origin: 50% 100%;
   cursor: pointer;
   opacity: 1;
-  transition: opacity 500ms ease, left 700ms cubic-bezier(0.33, 1, 0.68, 1),
-    top 700ms cubic-bezier(0.33, 1, 0.68, 1);
+  transition: opacity 500ms ease, transform 700ms cubic-bezier(0.33, 1, 0.68, 1);
 }
 .stage-actor[data-anchor="hanging"] {
-  transform: translate(-50%, 0);
   transform-origin: 50% 0;
-}
-.stage-actor[data-anchor="floating"],
-.stage-actor[data-anchor="wall"] {
-  transform: translate(-50%, -50%);
 }
 
 .stage-actor.entering,
 .stage-actor.leaving {
   opacity: 0;
+}
+/* An actor being created has no previous transform, so letting the position transition
+ * apply on its first placement makes it slide in from the top-left corner of the stage.
+ * While entering, only the fade is animated. */
+.stage-actor.entering {
+  transition: opacity 500ms ease;
 }
 
 .actor-art {
@@ -121,10 +134,15 @@
   object-position: center bottom;
   transform-origin: 50% 100%;
   transform: scaleX(var(--flip, 1));
-  /* Distance haze. Far cut-outs are hazier and less saturated, which is a depth cue and
-   * also stops them reading as sharp stickers pasted onto a soft painting. */
-  filter: blur(calc(var(--haze, 0) * 1.4px)) saturate(calc(1 - var(--haze, 0) * 0.4))
-    brightness(calc(1 + var(--haze, 0) * 0.14)) drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35));
+  /* Distance haze: far cut-outs are less saturated and slightly lifted, which reads as
+   * depth and stops them looking like sharp stickers on a soft painting.
+   *
+   * Deliberately no blur() and no drop-shadow() here. Both force the element out of a
+   * reusable composited layer and make the browser re-rasterise it while the camera
+   * moves — with eight actors on stage that was most of the frame budget. saturate and
+   * brightness are colour-matrix filters and cost almost nothing; the contact shadow is
+   * already drawn as a real element underneath. */
+  filter: saturate(calc(1 - var(--haze, 0) * 0.45)) brightness(calc(1 + var(--haze, 0) * 0.16));
   animation: idle-sway var(--sway-duration, 5s) ease-in-out infinite alternate;
   animation-delay: var(--sway-delay, 0s);
   -webkit-user-drag: none;
@@ -158,7 +176,7 @@
   width: 68%;
   height: 8%;
   transform: translateX(-50%);
-  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0));
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0));
   filter: blur(2px);
   pointer-events: none;
 }
@@ -206,16 +224,13 @@
   filter: none;
 }
 .stage-actor:hover .actor-name,
-.stage-actor.in-reach .actor-name {
+.stage-actor.is-closest .actor-name {
   opacity: 1;
 }
 
 .stage-actor.in-reach .actor-art,
 .stage-actor:hover .actor-art {
-  filter: blur(calc(var(--haze, 0) * 1.4px)) saturate(calc(1 - var(--haze, 0) * 0.3))
-    brightness(calc(1.08 + var(--haze, 0) * 0.14))
-    drop-shadow(0 0 12px color-mix(in srgb, var(--stage-accent, #d8b23c) 70%, transparent))
-    drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35));
+  filter: saturate(calc(1 - var(--haze, 0) * 0.3)) brightness(calc(1.14 + var(--haze, 0) * 0.16));
 }
 
 .stage-actor.interacted .actor-art {
@@ -340,13 +355,19 @@
 }
 .status-stat {
   padding: 7px 11px;
-  background: var(--panel);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(12, 13, 16, 0.88);
   border: 1px solid var(--hairline);
   border-radius: 8px;
   text-align: right;
   min-width: 74px;
+}
+.status-stat.changed {
+  border-color: color-mix(in srgb, var(--game-accent) 55%, transparent);
+  animation: stat-flash 1400ms ease-out;
+}
+@keyframes stat-flash {
+  0% { background: color-mix(in srgb, var(--game-accent) 30%, rgba(12, 13, 16, 0.88)); }
+  100% { background: rgba(12, 13, 16, 0.88); }
 }
 .status-stat dt {
   font-size: 0.62rem;
@@ -529,9 +550,7 @@
   text-align: right;
   /* Choices sit over the busiest part of the painting, so they carry more ground than
    * the other panels — at 0.72 they were washing out against light backdrops. */
-  background: rgba(10, 11, 14, 0.86);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: rgba(10, 11, 14, 0.9);
   border: 1px solid var(--hairline);
   border-left: 2px solid var(--game-accent);
   border-radius: 8px;
@@ -601,7 +620,7 @@
   border-radius: 8px;
   border: none;
   background: var(--game-accent);
-  color: #16120a;
+  color: var(--game-ink-on-accent);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 600;
@@ -651,7 +670,7 @@
   border-radius: 7px;
   border: none;
   background: var(--game-accent);
-  color: #16120a;
+  color: var(--game-ink-on-accent);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 600;
@@ -869,13 +888,19 @@
 
 /* ---- ending ------------------------------------------------------------ */
 
+/* The whole card scrolls, rather than capping the epilogue and scrolling inside it. The
+ * epilogue is the payoff of the entire game and a long one was being clipped mid-sentence
+ * on its final paragraph. `align-items: flex-start` plus `margin: auto` on the inner keeps
+ * a short ending centred while letting a long one scroll from the top — with centring
+ * alone, anything taller than the viewport has its head cut off and cannot be reached. */
 .ending {
   position: fixed;
   inset: 0;
   z-index: 60;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
+  overflow-y: auto;
   padding: 32px;
   background: rgba(5, 6, 8, 0.93);
   backdrop-filter: blur(10px);
@@ -885,6 +910,7 @@
 .ending-inner {
   width: 100%;
   max-width: 620px;
+  margin: auto;
 }
 .ending-outcome {
   font-size: 0.76rem;
@@ -911,8 +937,9 @@
   font-size: 1.04rem;
   line-height: 1.68;
   color: var(--ink);
-  max-height: 46vh;
-  overflow-y: auto;
+  /* No inner height cap and no fade: the card itself scrolls now, so the last paragraph
+   * is reachable in full instead of being masked out halfway through the sentence that
+   * the whole story was building toward. */
 }
 .ending-epilogue p { margin: 0 0 0.8em; }
 .ending-footer {
@@ -1038,7 +1065,7 @@
   border: none;
   border-radius: 9px;
   background: var(--game-accent);
-  color: #16120a;
+  color: var(--game-ink-on-accent);
   font: inherit;
   font-size: 0.96rem;
   font-weight: 600;

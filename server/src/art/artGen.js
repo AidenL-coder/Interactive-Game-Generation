@@ -64,14 +64,25 @@ function keyFor(text, kind) {
 
 function cutoutRules() {
   return (
-    "THIS IS A CUT-OUT, NOT A PICTURE. The subject floats alone with every single other " +
-    `pixel of the image filled with ${CHROMA}. That magenta must be completely flat and ` +
-    "uniform, reaching all four edges and all four corners: no gradient, no vignette, no " +
-    "cast shadow, no ground, no floor, no horizon, no scenery, no other objects. " +
-    "Absolutely no frame, border, plate mark, paper edge, deckle, margin rule, panel or " +
-    "inset of any kind — do not paint a print, a card or an illustration of the subject, " +
-    "paint the subject itself with nothing whatsoever behind it. The subject must contain " +
-    "no magenta and no pink. Show it complete, not cropped, filling most of the frame."
+    // Careful with the wording here. An earlier version opened "THIS IS A DIE-CUT STICKER
+    // OF THE SUBJECT", which is a vivid way to convey isolation and also a literal
+    // description of an object with a thick white outline around it — so the model duly
+    // painted one, and every affected prop wore a white keyline in the game. A border
+    // painted into the source cannot be keyed or eroded away afterwards, so the prompt has
+    // to forbid it outright rather than imply it.
+    "THE SUBJECT ALONE, ON AN EMPTY BACKGROUND — not a picture of a scene. There is no " +
+    "room, no wall, no floor, no ground, no sky, no furniture and no second object " +
+    "anywhere in this image. " +
+    `Every single pixel that is not the subject itself is ${CHROMA}: completely flat, ` +
+    "uniform, and reaching all four edges and all four corners, with no gradient, no " +
+    "vignette and no cast shadow. " +
+    "The subject's own painted edge must meet that magenta directly: do NOT draw an " +
+    "outline, keyline, stroke, contour line, halo, glow or white edge around it, and do " +
+    "NOT make it look like a sticker or a cut-out shape. No frame, border, plate mark, " +
+    "paper edge, deckle, margin rule, panel, inset or mount of any kind. If you are about " +
+    "to paint the subject standing somewhere, you have misunderstood: paint only the " +
+    "subject, on flat magenta. It must contain no magenta and no pink itself, and be " +
+    "shown whole and uncropped."
   );
 }
 
@@ -121,6 +132,15 @@ function buildPrompt(kind, description, bible, extra = {}) {
     `${style} ` +
     `A single ${subject}, shown complete and entire from top to bottom, at rest, seen ` +
     "from ground level at eye height, in three-quarter view. One subject only. " +
+    // People are the subject the model is most tempted to place somewhere. Objects come
+    // back correctly isolated; give it a person with an occupation and it paints them at
+    // work in a room — a whole scene, which then gets discarded as a framed picture, and
+    // the player's own figure is the cut-out that is always on screen. So say outright
+    // that a person stands alone and does nothing.
+    "If the subject is a person or a creature, they stand still and alone in a neutral " +
+    "upright pose, arms at their sides, doing nothing and touching nothing: not working, " +
+    "not operating or holding equipment, not seated, not in a room, and not beside any " +
+    "other object. Their occupation is conveyed by their clothing alone. " +
     cutoutRules() +
     ` Do not include: ${negative}, no frame, no border, no plate mark, no paper edge.`
   );

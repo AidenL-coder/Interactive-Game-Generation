@@ -21,9 +21,21 @@ function labelFor(key) {
 // player should be reading, and nested objects have no sensible one-line rendering.
 const HIDDEN = new Set(["inferred_preferences"]);
 
-export default function StatusBar({ title, objective, progress, stats, turnIndex }) {
+export default function StatusBar({ title, objective, progress, stats, prevStats, turnIndex }) {
+  const changed = (key) => {
+    if (!prevStats || !(key in prevStats)) return false;
+    return formatValue(prevStats[key]) !== formatValue(stats[key]);
+  };
+
+  // There is only room for five, and the slice used to take whichever five came first in
+  // the object. One logged session tracked fourteen one-shot clue flags, which pushed the
+  // clock that was actually counting down against the player off the panel entirely.
+  // Whatever moved this turn is the thing worth the space.
   const entries = Object.entries(stats || {})
-    .filter(([key, value]) => !HIDDEN.has(key) && !(value && typeof value === "object" && !Array.isArray(value)))
+    .filter(
+      ([key, value]) => !HIDDEN.has(key) && !(value && typeof value === "object" && !Array.isArray(value))
+    )
+    .sort((a, b) => Number(changed(b[0])) - Number(changed(a[0])))
     .slice(0, 5);
 
   const pct = Math.round(Math.min(Math.max(progress ?? 0, 0), 1) * 100);
@@ -45,7 +57,7 @@ export default function StatusBar({ title, objective, progress, stats, turnIndex
       {entries.length > 0 && (
         <dl className="status-stats">
           {entries.map(([key, value]) => (
-            <div key={key} className="status-stat">
+            <div key={key} className={`status-stat${changed(key) ? " changed" : ""}`}>
               <dt>{labelFor(key)}</dt>
               <dd>{formatValue(value)}</dd>
             </div>

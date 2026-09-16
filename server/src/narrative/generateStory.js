@@ -6,6 +6,7 @@ import {
   applyStoryDelta,
   spreadActors,
   findClearX,
+  MAX_ACTORS,
 } from "iwg-shared/story2d";
 import { anthropic, CLAUDE_MODEL } from "../anthropic.js";
 import {
@@ -52,6 +53,63 @@ function repairBeats(turn, knownIds) {
   const repaired = turn.beats.length - kept.length;
   if (!repaired) return { turn, repaired: 0 };
   return { turn: { ...turn, beats: kept }, repaired };
+}
+
+// A choice gated on an actor that does not exist can never be taken, so the turn is
+// unplayable as written — but only that gate is wrong. The choice text is fine, and
+// failing the whole turn hands the player an error over a broken pointer. Free the choice
+// instead: it becomes takeable from anywhere, which is a far smaller lie than an error.
+function repairChoiceGates(turn, knownIds) {
+  if (!Array.isArray(turn.choices)) return { turn, repaired: 0 };
+  const known = new Set(knownIds);
+  let repaired = 0;
+  const choices = turn.choices.map((c) => {
+    if (c?.requires_near && !known.has(c.requires_near)) {
+      repaired++;
+      const { requires_near, ...rest } = c;
+      return rest;
+    }
+    return c;
+  });
+  if (!repaired) return { turn, repaired: 0 };
+  return { turn: { ...turn, choices }, repaired };
+}
+
+// The model occasionally wants one more actor than the stage allows. Rejecting the turn
+// over it costs the player the whole beat — narrative, choices and all — for the sake of
+// a single prop. Trim the surplus additions instead, keeping the earliest, since the model
+// lists what matters first.
+function repairActorCount(turn, currentActors) {
+  const max = MAX_ACTORS;
+
+  if (Array.isArray(turn.scene?.actors) && turn.scene.actors.length > max) {
+    const dropped = turn.scene.actors.length - max;
+    return {
+      turn: { ...turn, scene: { ...turn.scene, actors: turn.scene.actors.slice(0, max) } },
+      repaired: dropped,
+    };
+  }
+
+  const add = turn.scene_delta?.add;
+  if (!Array.isArray(add) || !add.length) return { turn, repaired: 0 };
+
+  const removed = new Set(turn.scene_delta?.remove || []);
+  const surviving = currentActors.filter((a) => !removed.has(a.id)).length;
+  const room = max - surviving;
+  if (add.length <= room) return { turn, repaired: 0 };
+
+  const kept = add.slice(0, Math.max(room, 0));
+  const keptIds = new Set([
+    ...currentActors.filter((a) => !removed.has(a.id)).map((a) => a.id),
+    ...kept.map((a) => a.id),
+  ]);
+
+  // Anything that referenced a dropped actor now dangles, so clean up after ourselves.
+  const trimmed = { ...turn, scene_delta: { ...turn.scene_delta, add: kept } };
+  return {
+    turn: repairChoiceGates(repairBeats(trimmed, keptIds).turn, keptIds).turn,
+    repaired: add.length - kept.length,
+  };
 }
 
 // The 3D renderer un-gated a choice whenever the model gated all of them, because a
@@ -181,6 +239,7 @@ export async function generateStory({
   history,
   turnMessage,
   lastState,
+  prevStats,
   turnIndex,
   onProse,
   onRestart,
@@ -197,6 +256,7 @@ export async function generateStory({
     ablation,
     bible,
     lastState,
+    prevStats,
     currentActors,
     turnIndex,
   });
@@ -261,13 +321,39 @@ export async function generateStory({
     // them off a repaired or retried success would flatter the numbers.
     if (attempts === 0) spatial = check.spatial;
 
+    // Repair, in order, the faults that make a turn technically invalid without making
+    // it unplayable: a beat pointing at nothing, a choice gated on nothing, one actor too
+    // many. Each of these used to fail the whole turn and hand the player an error in
+    // place of a beat that was otherwise fine. Anything left invalid after this is a
+    // genuinely broken turn and still gets a retry.
     let candidate = raw;
     if (!check.valid) {
-      const { turn: fixed, repaired } = repairBeats(raw, actorIdsAfter(raw, currentActors));
-      if (repaired) {
+      let fixed = raw;
+      const notes = [];
+
+      const count = repairActorCount(fixed, currentActors);
+      if (count.repaired) {
+        fixed = count.turn;
+        notes.push(`dropped ${count.repaired} surplus actor(s)`);
+      }
+
+      const ids = actorIdsAfter(fixed, currentActors);
+      const beats = repairBeats(fixed, ids);
+      if (beats.repaired) {
+        fixed = beats.turn;
+        notes.push(`dropped ${beats.repaired} dangling beat(s)`);
+      }
+
+      const gates = repairChoiceGates(fixed, ids);
+      if (gates.repaired) {
+        fixed = gates.turn;
+        notes.push(`freed ${gates.repaired} choice(s) gated on a missing actor`);
+      }
+
+      if (notes.length) {
         const recheck = validate(fixed);
         if (recheck.valid) {
-          console.warn(`[generateStory] repaired ${repaired} dangling beat(s)`);
+          console.warn(`[generateStory] repaired turn: ${notes.join("; ")}`);
           candidate = fixed;
           check = recheck;
         }

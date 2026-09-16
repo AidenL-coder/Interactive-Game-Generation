@@ -38,6 +38,12 @@ export default function App() {
   // they read rather than appearing forty seconds later.
   const [pendingSpeaker, setPendingSpeaker] = useState(null);
 
+  // The stats as they stood at the end of the previous turn, so the panel can show what
+  // just moved. A number that changes silently is a number nobody reads — and the whole
+  // point of a pressure stat is that the player feels it closing in.
+  const lastStatsRef = useRef(null);
+  const [prevStats, setPrevStats] = useState(null);
+
   const containerRef = useRef(null);
   const stageRef = useRef(null);
   const playerXRef = useRef(0.5);
@@ -91,6 +97,13 @@ export default function App() {
       cancelled = true;
     };
   }, [session?.state, session?.turnIndex]);
+
+  useEffect(() => {
+    const stats = session?.state?.state_updates;
+    if (!stats) return;
+    setPrevStats(lastStatsRef.current);
+    lastStatsRef.current = stats;
+  }, [session?.turnIndex]);
 
   // The examine bubble belongs to the thing you are standing at; step away and it goes.
   useEffect(() => {
@@ -296,6 +309,7 @@ export default function App() {
         objective={state?.objective}
         progress={state?.progress}
         stats={state?.state_updates}
+        prevStats={prevStats}
         turnIndex={session?.turnIndex - 1}
       />
 

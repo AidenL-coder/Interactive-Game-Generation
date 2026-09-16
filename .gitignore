@@ -17,4 +17,4 @@ server/.art-cache/
 server/.style-cache/
 
 # Verification screenshots from scripts/playthrough.mjs
-.shots/
+.shots*/

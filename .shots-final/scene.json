@@ -6,80 +6,80 @@
   "stageWidth": 2480,
   "backdrop": {
     "loaded": true,
-    "image": "url(\"blob:http://localhost:5173/d97858f3-8437-4a87-b89b-e632c5e4e2f8\")"
+    "image": "url(\"blob:http://localhost:5173/e9412a97-f6b1-4614-9e6f-f348d78c69db\")"
   },
   "actors": [
     {
-      "id": "machine_07",
+      "id": "projector_01",
       "anchor": "ground",
-      "placeholder": true,
-      "hasArt": false,
-      "inReach": false,
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": true,
       "onScreen": true,
-      "left": -194,
+      "left": 712,
       "bottom": 711,
-      "w": 216,
-      "h": 254
+      "w": 148,
+      "h": 279
     },
     {
-      "id": "car_keys",
+      "id": "reel_forbidden",
       "anchor": "ground",
       "placeholder": false,
       "hasArt": true,
       "inReach": false,
       "onScreen": true,
-      "left": 265,
-      "bottom": 769,
+      "left": 966,
+      "bottom": 730,
       "w": 92,
-      "h": 118
+      "h": 107
     },
     {
-      "id": "attendant_rosa",
+      "id": "mrs_holloway",
       "anchor": "ground",
       "placeholder": false,
       "hasArt": true,
       "inReach": false,
       "onScreen": true,
-      "left": 687,
+      "left": 266,
       "bottom": 692,
-      "w": 91,
+      "w": 77,
       "h": 241
     },
     {
-      "id": "window_front",
-      "anchor": "wall",
+      "id": "tom_carrick",
+      "anchor": "ground",
+      "placeholder": false,
+      "hasArt": true,
+      "inReach": false,
+      "onScreen": true,
+      "left": 1299,
+      "bottom": 769,
+      "w": 93,
+      "h": 294
+    },
+    {
+      "id": "doorman_seth",
+      "anchor": "ground",
       "placeholder": false,
       "hasArt": true,
       "inReach": false,
       "onScreen": false,
-      "left": -605,
-      "bottom": 619,
-      "w": 194,
-      "h": 248
+      "left": -75,
+      "bottom": 625,
+      "w": 64,
+      "h": 172
     },
     {
-      "id": "vending_machines",
+      "id": "screen_sheet",
       "anchor": "ground",
       "placeholder": false,
       "hasArt": true,
       "inReach": false,
-      "onScreen": true,
-      "left": 1157,
-      "bottom": 641,
-      "w": 142,
-      "h": 203
-    },
-    {
-      "id": "sign_hanging",
-      "anchor": "hanging",
-      "placeholder": false,
-      "hasArt": true,
-      "inReach": false,
-      "onScreen": true,
-      "left": 314,
-      "bottom": 279,
-      "w": 92,
-      "h": 117
+      "onScreen": false,
+      "left": 1838,
+      "bottom": 625,
+      "w": 156,
+      "h": 248
     },
     {
       "id": "PLAYER",
@@ -87,34 +87,34 @@
       "hasArt": true,
       "inReach": false,
       "onScreen": true,
-      "left": 917,
+      "left": 761,
       "bottom": 737,
-      "w": 127,
+      "w": 78,
       "h": 272
     }
   ],
   "choices": [
     {
-      "text": "Ask Rosa if she saw who left the car and the laundry.",
+      "text": "Untie the cord and look inside the forbidden tin",
       "locked": true
     },
     {
-      "text": "Pick up the car keys and look them over.",
-      "locked": false
-    },
-    {
-      "text": "Crouch by machine seven and see what's actually inside.",
+      "text": "Ask Mrs. Holloway how full the hall will get tonight",
       "locked": true
     },
     {
-      "text": "Go to the window and look at the abandoned car.",
+      "text": "Ask Seth if he's heard anything strange about your projector case",
+      "locked": true
+    },
+    {
+      "text": "Take out your depth-gauge fob and check it, out of old habit",
       "locked": false
     },
     {
       "locked": false
     }
   ],
-  "objective": "Find out what happened to the owner of the abandoned keys before you have to lock up for the night.",
+  "objective": "Learn what the forbidden reel is and decide whether to run it once the hall is full.",
   "progress": "5%",
-  "title": "The Night Cycle"
+  "title": "The Reel Not on the Programme"
 }

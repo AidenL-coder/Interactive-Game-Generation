@@ -54,6 +54,18 @@ function shortLabel(label) {
   return head.length > 30 ? `${head.slice(0, 28)}…` : head;
 }
 
+// Perceived brightness, for deciding whether text on a filled accent should be dark or
+// light. Rec. 709 weights; good enough for a two-way choice.
+function luminance(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+  if (!m) return 0.5;
+  const n = parseInt(m[1], 16);
+  const r = ((n >> 16) & 255) / 255;
+  const g = ((n >> 8) & 255) / 255;
+  const b = (n & 255) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 function hashFloat(text) {
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) {
@@ -64,6 +76,10 @@ function hashFloat(text) {
 }
 
 export class Stage {
+  // Last player position the reach test was evaluated at, so it is only redone when the
+  // player has actually moved.
+  #lastReachX;
+
   constructor(container) {
     this.container = container;
     this.root = el("div", "stage-root", container);
@@ -99,6 +115,8 @@ export class Stage {
     this.playerNode = null;
     this.playerArt = null;
 
+    // Device pixel ratio, used to snap the camera to whole physical pixels.
+    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.cam = 0;
     this.camTarget = 0;
     this.W = 0;
@@ -613,7 +631,11 @@ export class Stage {
 
     this.camTarget = this.#cameraFor(p.x);
     this.cam += (this.camTarget - this.cam) * Math.min(1, dt * 5.5);
-    this.camera.style.transform = `translate3d(${-this.cam}px, 0, 0)`;
+    // Snap to whole device pixels. A camera at a fractional offset makes the browser
+    // resample the entire backdrop every frame, and the resampling phase changes frame to
+    // frame, which reads as the whole scene shimmering as you walk.
+    const camPx = Math.round(this.cam * this.dpr) / this.dpr;
+    this.#write(this.camera, "transform", `translate3d(${-camPx}px, 0, 0)`);
 
     this.#layoutPlayer();
     this.#updateReach();
@@ -630,11 +652,34 @@ export class Stage {
   }
 
   #updateReach() {
+    // Reach only changes when the player does. Recomputing it every frame meant two
+    // class writes per actor per frame — a style invalidation storm for an answer that
+    // was identical to the previous frame's.
+    if (this.#lastReachX !== undefined && Math.abs(this.player.x - this.#lastReachX) < 0.0015) {
+      return;
+    }
+    this.#lastReachX = this.player.x;
+
     const ids = [];
+    // Several things can be in reach at once on a crowded stage, and showing all their
+    // name tags stacks three labels on top of each other. Only the nearest is named.
+    let closest = null;
+    let closestGap = Infinity;
+
     for (const [id, entry] of this.actors) {
       const near = withinReach(this.player.x, entry.actor);
       entry.node.classList.toggle("in-reach", near);
-      if (near) ids.push(id);
+      if (near) {
+        ids.push(id);
+        const gap = Math.abs(this.player.x - entry.actor.x);
+        if (gap < closestGap) {
+          closestGap = gap;
+          closest = entry;
+        }
+      }
+    }
+    for (const entry of this.actors.values()) {
+      entry.node.classList.toggle("is-closest", entry === closest);
     }
     // Only notify React when the set actually changes — this runs sixty times a second.
     if (ids.length !== this.reachIds.length || ids.some((id, i) => id !== this.reachIds[i])) {
@@ -651,35 +696,89 @@ export class Stage {
     this.#layoutPlayer();
   }
 
+  // Where an element's own box sits relative to the point it is anchored to. This used to
+  // live in CSS, but position is now carried entirely by `transform` so it has to be part
+  // of the same transform string.
+  static #ANCHOR_OFFSET = {
+    ground: "translate(-50%, -100%)",
+    hanging: "translate(-50%, 0)",
+    floating: "translate(-50%, -50%)",
+    wall: "translate(-50%, -50%)",
+  };
+
+  // Writes a style only when the value actually changed. Every one of these is a style
+  // invalidation, and the player's are re-derived sixty times a second — most frames only
+  // the position differs, so re-asserting the other six was pure waste.
+  #write(node, prop, value) {
+    if (node.__last === undefined) node.__last = {};
+    if (node.__last[prop] === value) return;
+    node.__last[prop] = value;
+    if (prop === "transform") node.style.transform = value;
+    else if (prop === "zIndex") node.style.zIndex = value;
+    else node.style.setProperty(prop, value);
+  }
+
+  #place(node, l, height, width) {
+    // Position via transform rather than left/top. Layout properties are resolved at a
+    // different stage of the pipeline than the camera's transform, so a child positioned
+    // with `left` lands a frame apart from the camera that is translating underneath it —
+    // which is precisely why the player appeared to swim against the backdrop while
+    // walking even though every individual frame was correct.
+    const px = l.x * this.stageW;
+    const py = l.y * this.H;
+    const anchor = Stage.#ANCHOR_OFFSET[l.anchor] || Stage.#ANCHOR_OFFSET.ground;
+    this.#write(node, "transform", `translate3d(${px}px, ${py}px, 0) ${anchor}`);
+    this.#write(node, "--h", `${height}px`);
+    this.#write(node, "--w", `${width}px`);
+  }
+
   #layoutActorNode(entry) {
     const { actor, node } = entry;
     const l = layoutActor(actor, this.scene?.backdrop);
     const height = PERSON_FRAC * this.H * l.scale;
 
-    node.style.left = `${l.x * this.stageW}px`;
-    node.style.top = `${l.y * this.H}px`;
-    node.style.zIndex = String(l.z);
-    node.style.setProperty("--h", `${height}px`);
-    node.style.setProperty("--w", `${height * (entry.aspect || 0.7)}px`);
-    node.dataset.anchor = l.anchor;
-    // Things further away are hazier: a cheap depth cue that also stops distant cut-outs
+    this.#place(node, l, height, height * (entry.aspect || 0.7));
+    this.#write(node, "zIndex", String(l.z));
+    if (node.dataset.anchor !== l.anchor) node.dataset.anchor = l.anchor;
+    // Things further away are hazier: a depth cue that also stops distant cut-outs
     // reading as sharp stickers pasted on a soft painting.
-    node.style.setProperty("--haze", String(clamp((1 - l.depth) * 0.5, 0, 0.45)));
-    node.style.setProperty("--flip", actor.facing === "left" ? "-1" : "1");
+    this.#write(node, "--haze", String(clamp((1 - l.depth) * 0.5, 0, 0.45)));
+    this.#write(node, "--flip", actor.facing === "left" ? "-1" : "1");
   }
 
   #layoutPlayer() {
     if (!this.playerNode || !this.H) return;
+    const node = this.playerNode;
     const l = layoutActor({ x: this.player.x, depth: this.player.depth }, this.scene?.backdrop);
     const height = PERSON_FRAC * this.H * l.scale;
 
-    this.playerNode.style.left = `${l.x * this.stageW}px`;
-    this.playerNode.style.top = `${l.y * this.H}px`;
+    this.#place(node, l, height, height * (this.playerAspect || 0.4));
     // Always just in front of an actor at the same depth, so the player is never lost
     // behind something they are standing next to.
-    this.playerNode.style.zIndex = String(l.z + 1);
-    this.playerNode.style.setProperty("--h", `${height}px`);
-    this.playerNode.style.setProperty("--w", `${height * (this.playerAspect || 0.4)}px`);
-    this.playerNode.style.setProperty("--flip", String(this.player.facing));
-    this.playerNode.classList.toggle("walking", this.player.walking);
-    this.playerNode.classList.toggle("runnin
+    this.#write(node, "zIndex", String(l.z + 1));
+    this.#write(node, "--flip", String(this.player.facing));
+
+    const walking = this.player.walking;
+    const running = walking && this.player.running;
+    if (node.__walking !== walking) {
+      node.__walking = walking;
+      node.classList.toggle("walking", walking);
+    }
+    if (node.__running !== running) {
+      node.__running = running;
+      node.classList.toggle("running", running);
+    }
+  }
+
+  // -- teardown ------------------------------------------------------------
+
+  dispose() {
+    cancelAnimationFrame(this.raf);
+    this.resizeObserver?.disconnect();
+    window.removeEventListener("keydown", this.keyHandler);
+    window.removeEventListener("keyup", this.keyUpHandler);
+    this.atmosphere.dispose();
+    this.root.remove();
+    this.actors.clear();
+  }
+}

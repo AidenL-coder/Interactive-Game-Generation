@@ -22,7 +22,7 @@ web/     React frontend. web/src/stage/ is the 2D renderer; web/src/scene/ is th
 server/  Express. Wraps Claude for narrative and art direction, Gemini for illustration
 shared/  The generation contracts: story2d.js (2D) and worldState.js (3D)
 docs/    Research framing: problem formulation, related work, ablations, eval plan
-scripts/ playthrough.mjs — drives a real browser through a real game and screenshots it
+scripts/ verification harnesses — see "Verifying changes" below
 ```
 
 The model emits a structured turn through a forced tool call — prose, the scene, the
@@ -72,7 +72,7 @@ cp server/.env.example server/.env    # then fill in the keys below
 ```bash
 npm run dev:server   # http://localhost:3001
 npm run dev:web      # http://localhost:5173  (proxies /api -> :3001)
-npm test             # 136 dependency-free tests over the generation contracts
+npm test             # 201 dependency-free tests over the contracts and the compositor
 ```
 
 ## Playing
@@ -113,6 +113,38 @@ The 2D stage is the primary game. The first-person three.js renderer is still pr
 working (`web/src/scene/`, `shared/worldState.js`, the un-prefixed `/api/*` routes) as the
 other arm of the `engine` ablation: same narrative engine, same logging, same metrics,
 different presentation. `web/src/App.jsx` mounts the 2D game.
+
+## Verifying changes
+
+Three harnesses, because the defects in this project come in three kinds and each is
+invisible to the tools that catch the other two.
+
+```bash
+node scripts/playthrough.mjs --turns 16          # plays a real game in a real browser
+node scripts/motion-probe.mjs                    # measures what happens while walking
+node scripts/pressure-check.mjs                  # asks whether a session had stakes
+```
+
+**`playthrough.mjs`** drives a browser through an actual game and screenshots each beat.
+It catches what a still frame reveals: art that failed to key out, figures standing on
+blank paper, panels covering the character, a story that never reaches an ending.
+
+**`motion-probe.mjs`** exists because screenshots are structurally blind to the most
+annoying class of bug here. Every individual frame can be correct while the motion looks
+wrong, and that is not a hypothetical: the stage once rendered a flawless still at a hard
+30fps lock, with the player positioned via `left`/`top` while the camera moved via
+`transform`. Those resolve at different stages of the rendering pipeline, so the player
+landed a frame apart from the scene and visibly swam against it. No screenshot could have
+shown that. The probe records per-frame intervals, camera and player displacement, dropped
+frames and long tasks during a real walk, and reports them against time rather than
+against frames — a per-frame average is worthless for comparing runs at different frame
+rates, and an early version of this metric made a genuine 2× improvement look like a
+regression.
+
+**`pressure-check.mjs`** reads `server/logs/generations.jsonl` and reports, per tracked
+stat, how many turns it actually changed on. A story where nothing moves against the
+player is one where exhausting every conversation is strictly optimal, and that reads as
+tedium however good the prose is.
 
 ## Current status
 

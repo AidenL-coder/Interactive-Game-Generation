@@ -89,16 +89,11 @@ const BEHAVIOURS = [
       a: 0.4 + rng() * 0.5,
       glow: true,
     }),
-    draw(ctx, p, colour, t) {
+    draw(ctx, p, colour, t, glow) {
       const flicker = 0.55 + 0.45 * Math.sin(t * 0.006 + p.phase);
       ctx.globalAlpha = p.a * flicker;
-      ctx.fillStyle = colour;
-      ctx.shadowBlur = 8;
-      ctx.shadowColor = colour;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
+      const d = p.r * 7;
+      ctx.drawImage(glow, p.x - d / 2, p.y - d / 2, d, d);
     },
   },
   {
@@ -115,15 +110,11 @@ const BEHAVIOURS = [
       a: 0.3 + rng() * 0.45,
       glow: true,
     }),
-    draw(ctx, p, colour, t) {
+    draw(ctx, p, colour, t, glow) {
       ctx.globalAlpha = p.a * (0.6 + 0.4 * Math.sin(t * 0.0015 + p.phase));
-      ctx.fillStyle = colour;
-      ctx.shadowBlur = 6;
-      ctx.shadowColor = colour;
-      ctx.beginPath();
-      ctx.arc(p.x + Math.sin(t * 0.0008 + p.phase) * p.sway * 11, p.y, p.r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
+      const x = p.x + Math.sin(t * 0.0008 + p.phase) * p.sway * 11;
+      const d = p.r * 6;
+      ctx.drawImage(glow, x - d / 2, p.y - d / 2, d, d);
     },
   },
 ];
@@ -193,6 +184,26 @@ function behaviourName(behaviour) {
   return behaviour?.match?.[0];
 }
 
+// Glowing particles used to ask the canvas for a shadowBlur on every draw call, which
+// re-runs a blur per particle per frame. The glow is identical every time, so it is drawn
+// once into a small offscreen canvas and then blitted — the same picture for a fraction of
+// the cost.
+function makeGlowSprite(colour) {
+  const size = 32;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, colour);
+  grad.addColorStop(0.35, colour);
+  grad.addColorStop(1, "transparent");
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+  g.fill();
+  return c;
+}
+
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function rng() {
@@ -243,6 +254,7 @@ export class Atmosphere {
     this.behaviour = behaviourFor(kind);
     this.intensity = Math.min(Math.max(intensity ?? 0.4, 0), 1);
     this.colour = particleColour(this.behaviour, palette);
+    this.glow = makeGlowSprite(this.colour);
     this.#populate();
   }
 
@@ -298,7 +310,7 @@ export class Atmosphere {
       if (p.y < -margin) p.y = this.h + margin;
       else if (p.y > this.h + margin) p.y = -margin;
 
-      this.behaviour.draw(ctx, p, this.colour, now);
+      this.behaviour.draw(ctx, p, this.colour, now, this.glow);
     }
     ctx.restore();
     ctx.globalAlpha = 1;

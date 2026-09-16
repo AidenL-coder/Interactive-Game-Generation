@@ -12,7 +12,7 @@ const cache = new Map();
 // The model only emits JPEG, so there is no alpha channel and transparency comes from
 // keying out the flat magenta background it was asked for. The per-pixel decision lives
 // in chromaKey.js, which is pure and tested.
-import { keyAlpha, despill } from "./chromaKey.js";
+import { keyAlpha, despill, erodeAlpha, looksLikeAFramedPicture } from "./chromaKey.js";
 
 // If the model ignored the magenta instruction, keying removes almost nothing and the
 // figure renders as a raw rectangle pasted onto the scene — a framed picture standing in
@@ -22,15 +22,6 @@ import { keyAlpha, despill } from "./chromaKey.js";
 // is comfortably clear of a real cut-out and well above the 10-20% you get when only a
 // thin border keyed.
 const MIN_KEYED_FRACTION = 0.22;
-
-// The other, nastier failure: the model paints a *print of* the object — a rectangular
-// artwork with a magenta margin around it. The rim keys out, passing the fraction test,
-// and what survives is a picture in a frame standing on the deck. It is recognisable by
-// shape: what remains covers almost the whole image and is almost solidly opaque, which
-// no real cut-out object is. Both conditions have to hold, so a genuinely rectangular
-// subject (a gauge panel, a door) painted with a proper margin still passes.
-const FRAME_COVERAGE = 0.88;
-const FRAME_FILL = 0.85;
 
 // And a third failure, which slipped past both of the above: the model paints the subject
 // on a background that is *near* magenta rather than magenta — a mauve, a warm grey. Every
@@ -82,6 +73,10 @@ function cutOut(bitmap) {
     d[i + 1] = dg2;
     d[i + 2] = db2;
   }
+
+  // Cut away the contaminated rim. Without this, despilled fringe pixels come out white
+  // and every cut-out wears a hard white outline.
+  erodeAlpha(d, canvas.width, canvas.height);
   ctx.putImageData(img, 0, 0);
 
   const keyedFraction = keyed / total;
@@ -106,38 +101,6 @@ function cutOut(bitmap) {
     return { canvas, usable: false, reason: "what survived keying is a filled rectangle" };
   }
   return { canvas, usable: true };
-}
-
-// Measures the surviving region's bounding box and how solidly it is filled. Sampled on a
-// grid rather than per-pixel: this runs on every figure at 1K resolution and the answer is
-// a shape judgement, not a precise one.
-function looksLikeAFramedPicture(data, width, height) {
-  const step = Math.max(1, Math.floor(Math.min(width, height) / 220));
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
-  let opaque = 0;
-  let sampled = 0;
-
-  for (let y = 0; y < height; y += step) {
-    for (let x = 0; x < width; x += step) {
-      sampled++;
-      if (data[(y * width + x) * 4 + 3] > 128) {
-        opaque++;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-  if (maxX < 0) return false; // nothing survived; the fraction test already caught it
-
-  const coverage = ((maxX - minX) * (maxY - minY)) / (width * height);
-  const boxSamples = ((maxX - minX) / step + 1) * ((maxY - minY) / step + 1);
-  const fill = opaque / Math.max(boxSamples, 1);
-  return coverage > FRAME_COVERAGE && fill > FRAME_FILL;
 }
 
 // Trims fully transparent margin so the subject's real bottom edge sits on the ground
@@ -166,7 +129,69 @@ function trim(canvas) {
   const out = document.createElement("canvas");
   out.width = maxX - minX + 1;
   out.height = maxY - minY + 1;
-  out.getContext("2d").drawImage(canvas, minX, minY, out.width, out.height, 0, 0, out.width, out.height);
+  out
+    .getContext("2d")
+    .drawImage(canvas, minX, minY, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
+}
+
+// How flat a row has to be to count as blank margin rather than painted scene, and how
+// much of the frame we are willing to cut away.
+const MARGIN_FLATNESS = 9;
+const MARGIN_MAX_FRACTION = 0.32;
+// Paper is light. Requiring that stops a genuinely flat dark floor or a still black
+// water surface from being mistaken for the edge of the print.
+const MARGIN_MIN_LUMA = 0.72;
+
+/**
+ * Crops a blank paper margin off the bottom of a backdrop.
+ *
+ * Some art directions — anything that reads as a print, an engraving, a plate — make the
+ * image model paint the scene as artwork *on paper*, leaving a band of flat stock along
+ * the bottom of the frame. The renderer then stands every actor on blank paper, which is
+ * the single most broken-looking thing the stage can do. The instruction not to do it is
+ * in the prompt and is not reliably followed, so the margin is measured and removed.
+ *
+ * Only the bottom is trimmed: a flat band at the top is usually an overcast sky, and
+ * cutting that would move the horizon out from under everyone standing on it.
+ */
+function cropBlankMargin(canvas) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const { width, height } = canvas;
+  const limit = Math.floor(height * MARGIN_MAX_FRACTION);
+
+  const rowIsBlankPaper = (y) => {
+    const row = ctx.getImageData(0, y, width, 1).data;
+    let min = 255;
+    let max = 0;
+    let sum = 0;
+    const step = Math.max(1, Math.floor(width / 96));
+    let n = 0;
+    for (let x = 0; x < width; x += step) {
+      const i = x * 4;
+      const luma = (0.2126 * row[i] + 0.7152 * row[i + 1] + 0.0722 * row[i + 2]) / 255;
+      const v = luma * 255;
+      if (v < min) min = v;
+      if (v > max) max = v;
+      sum += luma;
+      n++;
+    }
+    return max - min < MARGIN_FLATNESS && sum / n > MARGIN_MIN_LUMA;
+  };
+
+  let cut = 0;
+  while (cut < limit && rowIsBlankPaper(height - 1 - cut)) cut++;
+
+  // A band only a few pixels deep is compression noise at the edge, not a margin.
+  if (cut < height * 0.02) return canvas;
+
+  const out = document.createElement("canvas");
+  out.width = width;
+  out.height = height - cut;
+  out.getContext("2d").drawImage(canvas, 0, 0, width, out.height, 0, 0, width, out.height);
+  console.warn(
+    `[art] cropped ${Math.round((cut / height) * 100)}% of blank margin off the backdrop`
+  );
   return out;
 }
 
@@ -208,26 +233,33 @@ export function loadArt({ sessionId, kind, description, extra }) {
 
       const bitmap = await createImageBitmap(await res.blob());
 
-      // Backdrops fill the frame — there is nothing to cut them out of.
+      // Backdrops fill the frame — there is nothing to cut them out of, only a blank
+      // paper margin to trim if the art direction produced one.
       if (kind === "backdrop") {
         const canvas = document.createElement("canvas");
         canvas.width = bitmap.width;
         canvas.height = bitmap.height;
         canvas.getContext("2d").drawImage(bitmap, 0, 0);
-        return { url: await toURL(canvas), aspect: bitmap.width / bitmap.height };
+        const cropped = cropBlankMargin(canvas);
+        return { url: await toURL(cropped), aspect: cropped.width / cropped.height };
       }
 
       let cut = cutOut(bitmap);
 
-      // The image model occasionally ignores the flat-background instruction outright.
-      // A fresh sample of the same prompt usually complies, and without this retry the
-      // unusable image stays cached and that object is a silhouette for the whole game.
-      if (!cut.usable) {
+      // The image model occasionally ignores the flat-background instruction outright,
+      // painting the subject into a whole scene instead. Without a retry the unusable
+      // image stays cached and that object is a silhouette for the rest of the game.
+      //
+      // Two fresh samples rather than one: each attempt is independent, and a single retry
+      // still left roughly one object per scene as a blob — the desk lamp in the telephone
+      // exchange failed twice in a row before this.
+      for (let attempt = 0; attempt < 2 && !cut.usable; attempt++) {
         console.warn(
           `[art] "${description.slice(0, 50)}" came back unusable (${cut.reason}) — regenerating`
         );
         const retry = await fetchArt(true);
-        if (retry.ok) cut = cutOut(await createImageBitmap(await retry.blob()));
+        if (!retry.ok) break;
+        cut = cutOut(await createImageBitmap(await retry.blob()));
       }
 
       if (!cut.usable) {

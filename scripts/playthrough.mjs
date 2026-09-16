@@ -144,9 +144,16 @@ async function main() {
     log(`player at x=${player.left}..${player.left + player.w}, ${player.onScreen ? "on screen" : "OFF SCREEN"}`);
     if (!player.onScreen) problems.push("the player's figure is off screen at the opening");
     // Standing inside something means the player is simply invisible.
-    const behind = report.actors.filter(
-      (a) => a.id !== "PLAYER" && a.left < player.left + player.w * 0.5 && a.left + a.w > player.left + player.w * 0.5
-    );
+    // Compare centres, not bounding boxes. A cut-out's DOM box spans the whole image
+    // including its transparent margins, so a wide prop's box can swallow the player's
+    // midpoint while the painted art is nowhere near it — this reported the player
+    // "overlapping" a projector that the scene data puts a third of the stage away.
+    const playerCentre = player.left + player.w * 0.5;
+    const behind = report.actors.filter((a) => {
+      if (a.id === "PLAYER") return false;
+      const centre = a.left + a.w * 0.5;
+      return Math.abs(centre - playerCentre) < (a.w + player.w) * 0.25;
+    });
     if (behind.length) problems.push(`player spawned overlapping: ${behind.map((a) => a.id).join(", ")}`);
   }
 
@@ -210,8 +217,12 @@ async function main() {
 
     // Prose should start appearing quickly; that is the whole point of streaming.
     const startedAt = Date.now();
+    // waitForFunction's second argument is `arg`, not options — passing the options
+    // object there silently left Playwright's 30s default in place, which failed a run
+    // on a turn that was simply taking a while to start.
     await page.waitForFunction(
       () => (document.querySelector(".narrative-body")?.textContent || "").length > 40,
+      undefined,
       { timeout: TURN_TIMEOUT }
     );
     log(`  first prose after ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);

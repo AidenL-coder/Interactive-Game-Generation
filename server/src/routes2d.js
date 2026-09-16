@@ -89,6 +89,7 @@ async function streamTurn({ res, session, turnMessage }) {
       history: session.history,
       turnMessage,
       lastState: session.lastState,
+      prevStats: session.prevStats,
       turnIndex: session.turnIndex,
       onProse: (delta) => stream.send("prose", { delta }),
       onRestart: () => stream.send("prose-reset", {}),
@@ -97,6 +98,10 @@ async function streamTurn({ res, session, turnMessage }) {
     const turnIndex = session.turnIndex;
     updateStorySession(session.id, {
       history: newHistory,
+      // The stats as they stood one turn further back. Telling the model that a specific
+      // stat failed to move needs two previous turns to compare, not one — and at this
+      // point `session.lastState` is still the turn before the one just generated.
+      prevStats: session.lastState?.state_updates || null,
       lastState: state,
       turnIndex: turnIndex + 1,
     });
