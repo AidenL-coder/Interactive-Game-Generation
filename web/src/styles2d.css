@@ -34,12 +34,12 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  /* Contain the actors' z-indexes. Depth sorting hands each actor an inline z-index of up
-   * to 1000 on the ground and 2200 hanging, and without a stacking context here those
-   * compete in the ROOT context against the interface, which tops out at 60. Every actor
-   * therefore painted over the choices, the examine bubble, the speech bubble and the
-   * ending screen — the visible symptom was a name tag sitting on top of the choice
-   * buttons, but by construction it was all of them. */
+  /* The stage sits explicitly beneath the interface. Actors carry inline z-indexes of
+   * up to 2200 from depth sorting; those stay contained because .stage-camera sets
+   * will-change: transform and so opens its own stacking context. What was missing is
+   * that this container had no z-index of its own, leaving it and the overlays as
+   * siblings ordered by DOM position — so scene content painted over the choices. */
+  z-index: 0;
   isolation: isolate;
 }
 

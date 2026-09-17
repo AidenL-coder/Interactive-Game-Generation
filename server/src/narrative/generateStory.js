@@ -6,6 +6,7 @@ import {
   applyStoryDelta,
   spreadActors,
   findClearX,
+  repairTurnShape,
   MAX_ACTORS,
 } from "iwg-shared/story2d";
 import { anthropic, CLAUDE_MODEL } from "../anthropic.js";
@@ -24,7 +25,7 @@ function findToolUse(message) {
 // Forcing tool_choice makes a well-formed reply likely, not guaranteed — rate limits,
 // truncation and malformed nesting all happen. Validate and retry with a fresh sample
 // before giving up, rather than serving a silently-broken scene.
-const MAX_ATTEMPTS = 2;
+const MAX_ATTEMPTS = 3;
 
 // Every turn forces a tool_choice, so every assistant message in history ends in a
 // tool_use block. The API requires that block be immediately followed by a matching
@@ -330,6 +331,13 @@ export async function generateStory({
     if (!check.valid) {
       let fixed = raw;
       const notes = [];
+
+      // Shape first: everything downstream assumes scene.actors exists.
+      const shape = repairTurnShape(fixed);
+      if (shape.repaired) {
+        fixed = shape.turn;
+        notes.push("reassembled a flattened scene object");
+      }
 
       const count = repairActorCount(fixed, currentActors);
       if (count.repaired) {

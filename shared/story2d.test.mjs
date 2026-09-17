@@ -10,6 +10,7 @@ import {
   withinReach,
   spreadActors,
   findClearX,
+  repairTurnShape,
   MIN_ACTORS,
   MAX_ACTORS,
 } from "./story2d.js";
@@ -440,6 +441,53 @@ console.log("\n--- spreadActors ---");
     "larger actors are pushed further apart than smaller ones",
     big[1].x - big[0].x > small[1].x - small[0].x
   );
+}
+
+console.log("\n--- repairTurnShape ---");
+{
+  const good = { narrative: "hi", scene: baseScene, choices };
+  const r = repairTurnShape(good);
+  check("a well-formed turn is left alone", !r.repaired && r.turn === good);
+}
+{
+  // The shape actually observed: scene holding the backdrop's fields, with actors and
+  // player_x hoisted alongside it.
+  const flat = {
+    narrative: "hi",
+    choices,
+    scene: backdrop,
+    actors: actors(5),
+    player_x: 0.3,
+  };
+  const r = repairTurnShape(flat);
+  check("a flattened scene is reassembled", r.repaired);
+  check("the backdrop lands in scene.backdrop", r.turn.scene.backdrop.description === backdrop.description);
+  check("the actors land in scene.actors", r.turn.scene.actors.length === 5);
+  check("player_x is carried across", r.turn.scene.player_x === 0.3);
+  check("the hoisted copies are removed", !("actors" in r.turn) && !("player_x" in r.turn));
+  check("the repaired turn now validates", validateStory(r.turn).valid, JSON.stringify(validateStory(r.turn).violations));
+  check("the input is not mutated", flat.actors.length === 5 && flat.scene === backdrop);
+}
+{
+  // Backdrop hoisted to the top level rather than living inside scene.
+  const flat = { narrative: "hi", choices, backdrop, actors: actors(5) };
+  const r = repairTurnShape(flat);
+  check("a top-level backdrop is gathered in", r.repaired && r.turn.scene.backdrop === backdrop);
+  check("that turn validates too", validateStory(r.turn).valid);
+}
+{
+  // Nothing to work with: no actors anywhere. Repair must refuse rather than invent.
+  const broken = { narrative: "hi", choices, scene: "a rusted deck at dusk" };
+  const r = repairTurnShape(broken);
+  check("an unrecoverable turn is refused, not fabricated", !r.repaired && r.turn === broken);
+}
+{
+  const noBackdrop = { narrative: "hi", choices, actors: actors(5) };
+  const r = repairTurnShape(noBackdrop);
+  check("actors without a backdrop cannot be repaired", !r.repaired);
+}
+{
+  check("a non-object turn is handled", !repairTurnShape(null).repaired);
 }
 
 console.log("\n--- findClearX ---");

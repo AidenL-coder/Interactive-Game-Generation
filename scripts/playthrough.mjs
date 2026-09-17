@@ -221,11 +221,24 @@ async function main() {
     // object there silently left Playwright's 30s default in place, which failed a run
     // on a turn that was simply taking a while to start.
     await page.waitForFunction(
-      () => (document.querySelector(".narrative-body")?.textContent || "").length > 40,
+      () =>
+        (document.querySelector(".narrative-body")?.textContent || "").length > 40 ||
+        (document.querySelector(".curtain-prose")?.textContent || "").length > 40,
       undefined,
       { timeout: TURN_TIMEOUT }
     );
     log(`  first prose after ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
+
+    // A turn that relocates the story repaints the whole place — a fresh backdrop plus
+    // figures and portraits, around ninety seconds — behind the full-screen painting
+    // curtain, during which the narrative panel does not exist at all. Waiting only on
+    // that panel sat through the entire five-minute timeout on a turn where every
+    // generation call had in fact succeeded in ten to twenty-five seconds.
+    if (await page.$(".curtain")) {
+      log("  relocating — waiting for the new place to be painted");
+      await page.waitForSelector(".curtain", { state: "detached", timeout: CURTAIN_TIMEOUT });
+      await page.waitForTimeout(2000);
+    }
     await page.waitForTimeout(1500);
     await shot(page, `1${turn}-turn${turn}-streaming`);
 

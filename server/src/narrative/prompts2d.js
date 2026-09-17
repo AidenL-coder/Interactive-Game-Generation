@@ -296,6 +296,14 @@ export function buildSystemPrompt2D({
       "(air, resolve, coin, suspicion, an inventory array, a named relationship). Short " +
       "snake_case names, the SAME names every turn, values changing as a consequence of " +
       "what the player just did. These are shown on screen as their status.\n" +
+      // The readable-value rule was originally stated only inside the PRESSURE block, and
+      // the model applied it exactly that narrowly: clocks came back as '3:00 to flood'
+      // while everything beside them stayed a bare 0-1 float. 'RESOLVE 0.7' on a panel is
+      // no more meaningful to a player than 'TIME TO DAWN 0.70' was.
+      "EVERY one of these values is printed on screen verbatim, so each must read at a " +
+      "glance with no legend: '3:00 to flood', '2 reels left', 'steady', 'bleeding', " +
+      "'40 min'. Never a bare 0-to-1 fraction for anything — if a stat is really a " +
+      "gauge, name its state in words instead of scoring it.\n" +
       // Measured across logged sessions: one orchard playthrough declared `resolve` and
       // `daylight_remaining` and then never moved either, while minting fourteen one-shot
       // clue_* booleans that each fired once and never again. The panel only has room for

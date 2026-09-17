@@ -72,7 +72,7 @@ cp server/.env.example server/.env    # then fill in the keys below
 ```bash
 npm run dev:server   # http://localhost:3001
 npm run dev:web      # http://localhost:5173  (proxies /api -> :3001)
-npm test             # 201 dependency-free tests over the contracts and the compositor
+npm test             # 214 dependency-free tests over the contracts and the compositor
 ```
 
 ## Playing
@@ -144,7 +144,18 @@ regression.
 **`pressure-check.mjs`** reads `server/logs/generations.jsonl` and reports, per tracked
 stat, how many turns it actually changed on. A story where nothing moves against the
 player is one where exhausting every conversation is strictly optimal, and that reads as
-tedium however good the prose is.
+tedium however good the prose is. It refuses to give a verdict on a session with fewer
+than four transitions, because "changed on every turn" is arithmetic rather than evidence
+when there are barely any turns — the first version cheerfully certified pressure from a
+single-turn session.
+
+A note on all three: they report what the renderer and the log actually contain, not what
+a screenshot appears to show. Four separate "defects" this project chased turned out to be
+faults in the measurement rather than the game — a player "overlapping" a prop a third of
+the stage away (bounding boxes include transparent margins), an epilogue "clipped
+mid-sentence" that was simply wrapping, a frame-rate-relative jitter metric that made a 2x
+speedup look like a regression, and a turn that "hung" while it was correctly repainting a
+new location. Check the underlying data before believing a rendered symptom.
 
 ## Current status
 

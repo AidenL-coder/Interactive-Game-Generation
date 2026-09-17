@@ -885,6 +885,64 @@ export function spreadActors(actors) {
 }
 
 /**
+ * Reassembles a turn whose `scene` object the model flattened.
+ *
+ * Observed in the wild: a turn came back as `{narrative, objective, progress, scene,
+ * actors, player_x}` — every piece of data present and correct, but with the scene's
+ * children hoisted to the top level and `scene` itself holding what should have been
+ * `scene.backdrop`. Validation rejected it as "scene missing/not an object" and the whole
+ * beat was discarded, which costs the player the turn for a purely structural slip.
+ *
+ * Nothing is invented here. If the pieces cannot be found, the turn is returned untouched
+ * and the caller retries, because a fabricated backdrop would be worse than an error.
+ *
+ * @returns {{turn: object, repaired: boolean}}
+ */
+export function repairTurnShape(turn) {
+  if (!turn || typeof turn !== "object") return { turn, repaired: false };
+
+  const scene = turn.scene;
+  const sceneIsObject = scene && typeof scene === "object" && !Array.isArray(scene);
+  // Already the right shape.
+  if (sceneIsObject && Array.isArray(scene.actors) && scene.backdrop) {
+    return { turn, repaired: false };
+  }
+
+  // A flattened `scene` usually holds the backdrop's own fields directly.
+  const looksLikeBackdrop = (v) =>
+    v && typeof v === "object" && !Array.isArray(v) && typeof v.description === "string";
+
+  const backdrop =
+    (sceneIsObject && looksLikeBackdrop(scene.backdrop) && scene.backdrop) ||
+    (looksLikeBackdrop(turn.backdrop) && turn.backdrop) ||
+    (looksLikeBackdrop(scene) && scene) ||
+    null;
+
+  const actors =
+    (sceneIsObject && Array.isArray(scene.actors) && scene.actors) ||
+    (Array.isArray(turn.actors) && turn.actors) ||
+    null;
+
+  if (!backdrop || !actors) return { turn, repaired: false };
+
+  const playerX = (sceneIsObject ? scene.player_x : undefined) ?? turn.player_x;
+
+  // Drop the hoisted copies so the turn has exactly one home for each field.
+  const { actors: _a, backdrop: _b, player_x: _p, ...rest } = turn;
+  return {
+    turn: {
+      ...rest,
+      scene: {
+        backdrop,
+        actors,
+        ...(typeof playerX === "number" ? { player_x: playerX } : {}),
+      },
+    },
+    repaired: true,
+  };
+}
+
+/**
  * Finds somewhere on the stage the player can stand without being inside anything.
  *
  * The player is drawn at the same scale as whatever they overlap, so a spawn point on top
