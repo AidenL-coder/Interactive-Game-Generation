@@ -346,6 +346,19 @@ export const STORY_DELTA_TOOL = {
         type: "string",
         description: "2-4 short paragraphs of second-person prose narrating this beat.",
       },
+      // Pre-generated games only. Without this a delta turn had no way at all to say
+      // the player had changed room: the backdrop carries forward untouched, so the
+      // scenery stayed in the opening location for an entire playthrough while the
+      // prose walked through four others. The judge caught it as "every set-piece
+      // exists only as text".
+      relocate_to: {
+        type: "string",
+        description:
+          "ONLY in a game with a fixed set of pre-built places. The id of the place the " +
+          "player has moved to, if this beat moves them. Omit it when they stay put. " +
+          "Setting this swaps the whole backdrop and cast to that place, so use it " +
+          "exactly when the prose says they have walked into somewhere else.",
+      },
       scene_delta: {
         type: "object",
         description: "Incremental change to the existing scene. Reference actors by id.",

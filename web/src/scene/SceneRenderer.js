@@ -19,6 +19,24 @@ import { heightAt, seedFromScene } from "./terrain.js";
 const EYE_HEIGHT = 1.7;
 const MOVE_SPEED = 6; // units/sec
 const SPRINT_MULTIPLIER = 1.85; // hold shift; a 40-unit world is tedious at walking pace
+// Arrow-key turning, in radians per second (~110°/s). Fast enough that turning round to
+// look behind you is a moment rather than a chore, slow enough to stop on a target.
+const TURN_SPEED = 1.9;
+
+// Keys the game consumes, which must not also scroll the page or type into a field.
+const GAME_KEYS = new Set([
+  "KeyW", "KeyA", "KeyS", "KeyD", "KeyE",
+  "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+  "ShiftLeft", "ShiftRight", "Space",
+]);
+
+/** True when the keystroke belongs to a text field rather than to the game. */
+function typingInAField(e) {
+  const el = e.target;
+  if (!el || el === document.body) return false;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+}
 const MAX_POINT_LIGHTS = 4; // cap live lights (torches) for perf
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -257,15 +275,22 @@ export class Scene3D {
     this.keys = new Set();
     this._onResize = this._onResize.bind(this);
     this._onKeyDown = (e) => {
+      // Movement used to run off the window regardless of focus, so typing "a wasd
+      // question" into the free-text choice box walked the player across the room.
+      if (typingInAField(e)) return;
+      if (GAME_KEYS.has(e.code)) e.preventDefault();
       this.keys.add(e.code);
       // Walking up to something and acting on it is the point of having a 3D world at
       // all — it turns exploration into the choice mechanism rather than a parallel
       // activity happening behind a menu.
-      if (e.code === "KeyE" && this._focusProp && !this.playback) {
+      if (e.code === "KeyE" && !e.repeat && this._focusProp && !this.playback) {
         this.onInteract?.(this._focusProp);
       }
     };
     this._onKeyUp = (e) => this.keys.delete(e.code);
+    // Releasing a key while the window is unfocused never delivers a keyup, which left
+    // the player walking forever after an alt-tab.
+    this._onBlur = () => this.keys.clear();
     this._animate = this._animate.bind(this);
 
     this._initThree();
@@ -273,6 +298,7 @@ export class Scene3D {
     window.addEventListener("resize", this._onResize);
     window.addEventListener("keydown", this._onKeyDown);
     window.addEventListener("keyup", this._onKeyUp);
+    window.addEventListener("blur", this._onBlur);
     this.renderer.setAnimationLoop(this._animate);
   }
 
@@ -836,10 +862,25 @@ export class Scene3D {
 
     if (this.playback) {
       this._stepPlayback(dt);
-    } else if (this.controls.isLocked) {
+    } else {
+      // Movement no longer waits for pointer lock. It used to: nothing moved until you
+      // clicked the canvas and the browser granted the lock, which a trackpad user, a
+      // browser that refuses the request, and a headless test harness all experience
+      // as a game that ignores the keyboard entirely. The mouse still looks around
+      // under lock; the arrow keys now do the same job without it.
+      const held = (...codes) => codes.some((c) => this.keys.has(c));
+      const turn = (held("ArrowLeft") ? 1 : 0) - (held("ArrowRight") ? 1 : 0);
+      if (turn) {
+        const euler = new THREE.Euler(0, 0, 0, "YXZ").setFromQuaternion(this.camera.quaternion);
+        euler.y += turn * TURN_SPEED * dt;
+        // Written in the same YXZ order PointerLockControls uses, so mouse-look picks up
+        // exactly where the keyboard left off instead of snapping.
+        this.camera.quaternion.setFromEuler(euler);
+      }
+
       const dir = new THREE.Vector3();
-      const forward = (this.keys.has("KeyW") ? 1 : 0) - (this.keys.has("KeyS") ? 1 : 0);
-      const strafe = (this.keys.has("KeyD") ? 1 : 0) - (this.keys.has("KeyA") ? 1 : 0);
+      const forward = (held("KeyW", "ArrowUp") ? 1 : 0) - (held("KeyS", "ArrowDown") ? 1 : 0);
+      const strafe = (held("KeyD") ? 1 : 0) - (held("KeyA") ? 1 : 0);
       const sprinting = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
       const speed = MOVE_SPEED * (sprinting ? SPRINT_MULTIPLIER : 1);
       const moving = Boolean(forward || strafe);
@@ -895,6 +936,7 @@ export class Scene3D {
     this.renderer.setAnimationLoop(null);
     window.removeEventListener("resize", this._onResize);
     window.removeEventListener("keydown", this._onKeyDown);
+    window.removeEventListener("blur", this._onBlur);
     window.removeEventListener("keyup", this._onKeyUp);
     this.controls.unlock?.();
     this.renderer.dispose();

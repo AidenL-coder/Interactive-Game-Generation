@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readPackAsset } from "../packs/packAssets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, "..", "..", ".texture-cache");
@@ -194,11 +195,24 @@ export function describedSkyPrompt(description, lightLevel) {
  *   generated from description rather than from a fixed set of presets.
  * @param {number} [args.lightLevel] - 0-1, used to pitch sky brightness.
  */
-export async function getTexture({ kind = "ground", propType, label, lightLevel = 0.7 }) {
-  if (!textureGenEnabled) throw new Error("texture generation disabled (no API key)");
+/**
+ * The filename a texture is stored under, in the generated cache and in a pack's own
+ * 3D assets alike. Exported so scripts/bake-pack.mjs files a pack's textures under
+ * exactly the name this module will later look for.
+ */
+export function textureFileName({ kind = "ground", propType, label }) {
+  return cacheKey(null, null, null, kind, propType, label);
+}
 
+export async function getTexture({ kind = "ground", propType, label, lightLevel = 0.7 }) {
   const key = cacheKey(null, null, null, kind, propType, label);
   const cachePath = path.join(CACHE_DIR, key);
+
+  // A pack's shipped textures come first and need no key at all. This check used to sit
+  // behind the "no API key" guard, which meant a machine without an image key could not
+  // even read a texture that was already on disk.
+  const shipped = await readPackAsset("textures", key);
+  if (shipped) return { buffer: shipped, contentType: sniffImageType(shipped), fromPack: true };
 
   try {
     const cached = await readFile(cachePath);
@@ -206,6 +220,8 @@ export async function getTexture({ kind = "ground", propType, label, lightLevel 
   } catch {
     // cache miss — fall through and generate
   }
+
+  if (!textureGenEnabled) throw new Error("texture generation disabled (no API key)");
 
   if (inFlight.has(key)) return inFlight.get(key);
 

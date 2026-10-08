@@ -476,6 +476,17 @@ export const WORLD_STATE_DELTA_TOOL = {
         description:
           "2-4 short paragraphs of second-person prose narrating the current beat.",
       },
+      // Pre-generated worlds only. The same field the 2D contract carries, for the same
+      // reason: without it a delta turn has no way to say the player changed rooms, the
+      // environment carries forward untouched, and the prose walks somewhere the world
+      // on screen never goes. That cost the 2D pack an entire playthrough before a judge
+      // noticed every set-piece "exists only as text".
+      relocate_to: {
+        type: "string",
+        description:
+          "ONLY in a game with a fixed set of pre-built places. The id of the place the " +
+          "player has moved to, if this beat moves them. Omit it when they stay put.",
+      },
       scene_delta: {
         type: "object",
         description: "Incremental change to the existing scene. Reference props by id.",

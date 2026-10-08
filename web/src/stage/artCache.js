@@ -37,7 +37,9 @@ const MAX_AMBIGUOUS_FRACTION = 0.18;
 // chroma keying would only risk eating parts of the subject.
 const ALPHA_PRESENT_FRACTION = 0.04;
 
-function cutOut(bitmap) {
+// Exported so scripts/bake-pack.mjs can check a pack's figures with the exact code the
+// game uses, rather than a reimplementation that could drift from it.
+export function cutOut(bitmap) {
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
   canvas.height = bitmap.height;

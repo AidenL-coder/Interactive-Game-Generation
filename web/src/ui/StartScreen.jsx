@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { fetchPacks3d } from "../api.js";
 
 // Chosen to be unlike each other — a ruin, a spacecraft, an interior, a historical
 // setting — so it's immediately clear the system isn't drawing from a fantasy preset.
@@ -29,15 +30,26 @@ export default function StartScreen({ onStart, busy, error }) {
   const [evolving, setEvolving] = useState(true);
   const [engine, setEngine] = useState("llm");
   const [persistent, setPersistent] = useState(true);
+  const [packs, setPacks] = useState([]);
+
+  useEffect(() => {
+    let live = true;
+    fetchPacks3d().then((list) => live && setPacks(list));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const profileNow = () => ({
+    name: name.trim() || "Player",
+    interests: interests.split(",").map((s) => s.trim()).filter(Boolean),
+  });
 
   function submit(e) {
     e.preventDefault();
     if (!sourceText.trim()) return;
     onStart({
-      profile: {
-        name: name.trim() || "Player",
-        interests: interests.split(",").map((s) => s.trim()).filter(Boolean),
-      },
+      profile: profileNow(),
       sourceText: sourceText.trim(),
       ablation: {
         personalization,
@@ -48,6 +60,13 @@ export default function StartScreen({ onStart, busy, error }) {
     });
   }
 
+  // A pack ignores the ablation toggles below on purpose: its persistence is fixed to
+  // match the 2D engine, so a pack played in both renderers differs only in the renderer.
+  function startPack(packId) {
+    if (busy) return;
+    onStart({ profile: profileNow(), packId, ablation: { personalization, evolving } });
+  }
+
   return (
     <div className="start-screen">
       <form className="start-form" onSubmit={submit}>
@@ -56,6 +75,31 @@ export default function StartScreen({ onStart, busy, error }) {
           Give it a chapter, an article, a subject to learn, or just a premise. It
           generates a walkable 3D world and continues the story from your choices.
         </p>
+
+        {packs.length > 0 && (
+          <section className="start2d-packs">
+            <div className="packs-head">
+              <span className="packs-label">Ready to play in 3D</span>
+              <span className="packs-note">already built — starts straight away</span>
+            </div>
+            {packs.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="pack-card"
+                data-pack-id={p.id}
+                disabled={busy}
+                onClick={() => startPack(p.id)}
+              >
+                <span className="pack-title">{p.title}</span>
+                <span className="pack-blurb">{p.blurb}</span>
+                <span className="pack-meta">
+                  {p.places} places · {p.cast} things to find · no wait
+                </span>
+              </button>
+            ))}
+          </section>
+        )}
 
         <label>
           Your name

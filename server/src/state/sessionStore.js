@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 // Swap this for Redis/SQLite if sessions need to survive a server restart later.
 const sessions = new Map();
 
-export function createSession({ profile, sourceText, ablation }) {
+export function createSession({ profile, sourceText, ablation, pack = null }) {
   const id = randomUUID();
   const session = {
     id,
@@ -19,8 +19,22 @@ export function createSession({ profile, sourceText, ablation }) {
       engine: ablation?.engine === "template" ? "template" : "llm",
       // "persistent" = world mutates across turns via deltas; "regenerated" = each turn
       // rebuilds the scene from scratch (the original behaviour, kept as the baseline).
-      persistence: ablation?.persistence === "persistent" ? "persistent" : "regenerated",
+      //
+      // A pack game defaults to persistent, because the 2D engine does, and the point of
+      // running one pack through both renderers is that the renderer is the only thing
+      // that differs. An explicit "regenerated" is still honoured.
+      persistence:
+        ablation?.persistence === "persistent" || (pack && ablation?.persistence !== "regenerated")
+          ? "persistent"
+          : "regenerated",
+      // Same axis and same values as the 2D store, so a pack played in either renderer
+      // is labelled identically apart from the engine itself.
+      worldSource: pack ? "pack" : "generated",
+      packId: pack?.id ?? null,
+      renderer: "3d",
     },
+    pack,
+    placeId: pack?.opening?.place ?? null,
     history: [],
     lastWorldState: null,
     turnIndex: 0,

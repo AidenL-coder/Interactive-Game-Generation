@@ -14,7 +14,7 @@ const sessions = new Map();
 // full turn histories is a slow leak. Evict the oldest once past this.
 const MAX_SESSIONS = 200;
 
-export function createStorySession({ profile, sourceText, ablation }) {
+export function createStorySession({ profile, sourceText, ablation, pack = null }) {
   const id = randomUUID();
   const session = {
     id,
@@ -27,8 +27,21 @@ export function createStorySession({ profile, sourceText, ablation }) {
       // every turn repaints from scratch, which is the weaker baseline.
       persistence: ablation?.persistence === "regenerated" ? "regenerated" : "persistent",
       engine: "2d",
+      // Whether the scenery was generated for this premise or came pre-painted in a
+      // pack. Recorded as an ablation axis so pack playthroughs can never be quietly
+      // pooled with generative ones when results are computed.
+      worldSource: pack ? "pack" : "generated",
+      packId: pack?.id ?? null,
+      // `engine` above means "2d" here but "llm"/"template" in the 3D store — the two
+      // stores grew that field for different axes. `renderer` is the unambiguous one, set
+      // identically in both, so a 2D-vs-3D comparison can be filtered on a single field.
+      renderer: "2d",
     },
-    bible: null,
+    // The pack itself is held on the session rather than re-read per turn; it is static.
+    pack,
+    // Which of the pack's pinned places the player is currently standing in.
+    placeId: pack?.opening?.place ?? null,
+    bible: pack ? pack.bible : null,
     history: [],
     lastState: null,
     turnIndex: 0,
@@ -54,7 +67,7 @@ export function updateStorySession(id, patch) {
   return session;
 }
 
-/** What the client is allowed to see: no history, no source text echo. */
+/** What the client is allowed to see: no history, no source text echo, no pack manifest. */
 export function publicStorySession(session) {
   return {
     sessionId: session.id,
@@ -62,5 +75,6 @@ export function publicStorySession(session) {
     turnIndex: session.turnIndex,
     bible: session.bible,
     state: session.lastState,
+    placeId: session.placeId ?? null,
   };
 }

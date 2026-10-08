@@ -9,6 +9,7 @@ import { generateStory } from "./narrative/generateStory.js";
 import { firstTurnMessage2D, choiceTurnMessage2D } from "./narrative/prompts2d.js";
 import { getStyleBible } from "./art/styleBible.js";
 import { getArt, artGenEnabled, ART_KINDS } from "./art/artGen.js";
+import { loadPack, listPacks } from "./packs/loadPack.js";
 import { logGeneration } from "./logging/logger.js";
 
 export const router = express.Router();
@@ -81,11 +82,13 @@ async function streamTurn({ res, session, turnMessage }) {
 
     stream.send("status", { phase: "writing" });
 
-    const { state, newHistory, usage, latencyMs, spatial } = await generateStory({
+    const { state, newHistory, usage, latencyMs, spatial, placeId, snapReport } = await generateStory({
       profile: session.profile,
       sourceText: session.sourceText,
       ablation: session.ablation,
       bible: session.bible,
+      pack: session.pack,
+      currentPlaceId: session.placeId,
       history: session.history,
       turnMessage,
       lastState: session.lastState,
@@ -104,6 +107,7 @@ async function streamTurn({ res, session, turnMessage }) {
       prevStats: session.lastState?.state_updates || null,
       lastState: state,
       turnIndex: turnIndex + 1,
+      placeId: placeId ?? session.placeId,
     });
 
     await logGeneration({
@@ -117,6 +121,11 @@ async function streamTurn({ res, session, turnMessage }) {
       usage,
       latencyMs,
       spatial,
+      // Only present on pack games: which pinned place the turn landed in and what had
+      // to be corrected to keep it there. A pack whose snap report is never empty is a
+      // pack whose briefing needs work, and that is only visible if it is recorded.
+      place: placeId ?? null,
+      snap: snapReport,
     });
 
     stream.send("turn", publicStorySession(getStorySession(session.id)));
@@ -137,16 +146,47 @@ async function streamTurn({ res, session, turnMessage }) {
   }
 }
 
-router.post("/sessions", async (req, res) => {
-  const { profile, sourceText, ablation } = req.body || {};
-  if (!sourceText || !String(sourceText).trim()) {
-    return res.status(400).json({ error: "sourceText is required" });
+// The pre-generated games on offer. The start screen lists these as the no-waiting
+// option; everything else on that screen types a premise and waits a minute.
+router.get("/packs", async (_req, res) => {
+  try {
+    res.json({ packs: await listPacks() });
+  } catch (err) {
+    console.error("[GET /api/2d/packs] failed:", err);
+    res.status(500).json({ error: "could not read the pack list" });
   }
-  if (String(sourceText).length > 20000) {
+});
+
+router.post("/sessions", async (req, res) => {
+  const { profile, sourceText, ablation, packId } = req.body || {};
+
+  // A pack supplies its own premise and its own art direction, so the client sends an
+  // id instead of a wall of text.
+  let pack = null;
+  if (packId) {
+    try {
+      pack = await loadPack(String(packId));
+    } catch (err) {
+      console.error(`[2d] pack "${packId}" failed to load:`, err);
+      return res.status(500).json({ error: "that game is misconfigured", detail: String(err.message || err) });
+    }
+    if (!pack) return res.status(404).json({ error: `no such game: ${packId}` });
+  }
+
+  const premise = pack ? pack.premise : sourceText;
+  if (!premise || !String(premise).trim()) {
+    return res.status(400).json({ error: "sourceText is required (or a packId)" });
+  }
+  if (String(premise).length > 20000) {
     return res.status(400).json({ error: "sourceText too long (20000 char limit)" });
   }
 
-  const session = createStorySession({ profile, sourceText: String(sourceText), ablation });
+  const session = createStorySession({
+    profile,
+    sourceText: String(premise),
+    ablation,
+    pack,
+  });
   // The client needs the id before the stream finishes so it can cancel or reconnect.
   res.setHeader("X-Session-Id", session.id);
   await streamTurn({ res, session, turnMessage: firstTurnMessage2D() });
@@ -220,7 +260,10 @@ router.get("/art", async (req, res) => {
   const session = sid ? getStorySession(String(sid)) : null;
   if (sid && !session) return res.status(404).json({ error: "session not found" });
 
-  if (!artGenEnabled) {
+  // A pack ships its own artwork, so it plays on a machine with no image key at all —
+  // which is the point of handing one to somebody. Only refuse up front when there is
+  // nothing on disk to fall back to.
+  if (!artGenEnabled && !session?.pack) {
     return res.status(503).json({ error: "art generation disabled (no image API key)" });
   }
 

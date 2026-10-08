@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { shortName } from "../ui2d/labels.js";
 
 // Roughly how much prose fits in the collapsed panel before it's worth offering "more".
 // Below this the toggle would be noise, so it isn't shown at all.
@@ -63,9 +64,11 @@ export default function ChoicePanel({ worldState, onChoose, busy, nearbyIds = []
             >
               {c.text}
               {locked && (
-                <span className="choice-gate">
-                  go to {target?.label || "it"}
-                </span>
+                // shortName, not the raw label: a label is a full painter's brief, and
+                // printing it whole put a sentence-long "go to a tall brass-and-glass
+                // press feeding out one long unbroken paper ribbon…" on the button. The
+                // same rule the 2D pill uses, tested in ui2d/labels.test.mjs.
+                <span className="choice-gate">go to {shortName(target?.label, "it")}</span>
               )}
             </button>
           );

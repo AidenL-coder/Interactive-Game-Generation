@@ -1,0 +1,582 @@
+{
+  "version": 1,
+  "id": "attention-engine",
+  "title": "The Attention Engine",
+  "blurb": "Walk a single sentence through the five stages of a transformer — tokens, embeddings, attention, heads, and the word it finally predicts — before the sentence decays past reading.",
+  "premise": "A learning game about how a transformer language model actually works.\n\nThe player has walked into the Attention Engine: a vast machine, built like a 1960s\ntechnical diagram made architecture, that exists to read one sentence and predict the\nword that comes next. The sentence is already inside it, suspended and slowly decaying.\nThe machine will not run until someone carries the sentence through all five of its\nstages, and it will not let a person through a stage they do not understand.\n\nThe Keeper tends the machine. She explains willingly but she does not hand out answers:\nshe asks the player to say back what a stage does, or to make a choice that only makes\nsense if they have grasped it, and she can tell the difference between understanding and\na good guess. Her patience is finite.\n\nThis is a game about comprehension, not trivia. The player should leave able to explain,\nin their own words, what a token is, why words become vectors, what a query and a key\nand a value are for, why attention is run many times in parallel, and why the final\nanswer is sampled rather than chosen. Every explanation must be technically correct:\nthis teaches a real architecture and a player who later reads the paper should find\nnothing here that contradicts it. Use the machinery in the room to explain — the cutting\nwheel, the orrery, the plinths, the wheel of unequal wedges — never slide into lecturing\nwith terminology the room does not contain.",
+  "styleId": "y0wq7u",
+  "bible": {
+    "id": "y0wq7u",
+    "title": "Attention Is All You Need",
+    "medium": "clean vector-flat technical-diagram illustration, like a 1960s information-design textbook plate: geometric shapes with precise airbrush gradients confined inside hard-edged silhouettes, every object constructed from circles, rounded rectangles and thin connecting lines as if diagrammed by an engineer who is also a children's-book illustrator",
+    "palette": "chalkboard navy and paper-cream as the two grounds, with signal-red and signal-amber used only for highlighted data tokens, a single cool cyan for \"attention\" connection lines, and graphite grey for inactive/unlit elements",
+    "light": "flat even poster light, no cast shadows, but each active element gets a faint self-illuminated glow (soft radial gradient) to show it is \"live\" or being attended to — like indicator lamps on a console",
+    "linework": "uniform crisp 3pt black contour on every shape, no texture or hatching, interiors filled with flat color or a single smooth gradient step, labels and tiny arrows rendered as clean geometric glyphs not handwriting",
+    "protagonist": "a curious, ordinary person in a soft cream cable-knit sweater and round wire glasses, sleeves pushed up, holding a glowing cyan magnifying lens up to inspect streams of floating word-tokens — practical, student-like, no armor or fantasy trappings, just a notebook tucked under one arm",
+    "negative": "no text, no watermarks, no photorealism, no lens flare, no 3d render, no painterly texture, no sketchy or hand-drawn wobble, no frames, no borders, no vignettes, no drop shadows implying a floating card, no orange-and-teal cinematic grading"
+  },
+  "targetTurns": 14,
+  "objective": "Carry the sentence through all five stages of the Engine and see what word it predicts — before the sentence decays past reading.",
+  "stats": [
+    {
+      "key": "sentence",
+      "initial": "intact — nine words",
+      "pressure": true,
+      "note": "What is left of the sentence held in the machine. It loses a word, or a word goes unreadable, every single turn — name the words as they go. This is the clock: when it is down to fragments the run has failed. Always a readable phrase naming what remains, never a number or a fraction."
+    },
+    {
+      "key": "understood",
+      "initial": "nothing yet",
+      "note": "Which stages the player has actually demonstrated they understand, named in plain words — 'tokens', 'tokens, embeddings'. Only add a stage when the player has shown it in their own words or by a choice that required it, never for simply being told."
+    },
+    {
+      "key": "keeper",
+      "initial": "patient",
+      "note": "The Keeper's mood as one readable word or phrase — 'patient', 'brisk', 'repeating herself', 'out of patience'. It hardens when the player guesses or stalls and softens when they get something right."
+    }
+  ],
+  "cast": [
+    {
+      "id": "keeper_01",
+      "label": "the Keeper, a calm woman in a long graphite-grey coat with cyan wire looped over one shoulder like a stole, hands clasped behind her back",
+      "detail": "Her coat is lined with hundreds of tiny stitched arrows, all of them pointing toward her own heart.",
+      "x": 0.33,
+      "depth": 0.55,
+      "scale": 1,
+      "facing": "left",
+      "character": true,
+      "form3d": "humanoid"
+    },
+    {
+      "id": "sentence_overhead",
+      "label": "a floating sentence of glowing cream word-tokens strung in a gentle arc, each tile lit faintly from within like a paper lantern",
+      "detail": "One word near the middle flickers between two brightnesses, as if it cannot decide how important it is.",
+      "x": 0.4,
+      "depth": 0.15,
+      "scale": 1.2,
+      "anchor": "floating",
+      "facing": "left",
+      "form3d": "wide"
+    },
+    {
+      "id": "plinth_tokens",
+      "label": "a dark, unlit stone-pale plinth topped with a shallow dish shape, waiting to hold the Tokens piece",
+      "detail": "A faint groove worn into its surface shows where countless student hands have rested before yours.",
+      "x": 0.5,
+      "depth": 0.45,
+      "scale": 0.8,
+      "facing": "right",
+      "form3d": "small"
+    },
+    {
+      "id": "plinth_qk",
+      "label": "a dark, unlit stone-pale plinth topped with two interlocking ring-shapes, waiting to hold the Queries and Keys piece",
+      "detail": "The rings are not quite touching, separated by a hair's width, as though waiting to be told to connect.",
+      "x": 0.6,
+      "depth": 0.45,
+      "scale": 0.8,
+      "facing": "right",
+      "form3d": "small"
+    },
+    {
+      "id": "plinth_values",
+      "label": "a dark, unlit stone-pale plinth topped with a stack of thin plate shapes, waiting to hold the Values piece",
+      "detail": "The plates are each a slightly different shade of cream, like pages of a book no one has opened yet.",
+      "x": 0.7,
+      "depth": 0.45,
+      "scale": 0.8,
+      "facing": "right",
+      "form3d": "small"
+    },
+    {
+      "id": "archway_deep",
+      "label": "a vast dark archway far down the hall, unlit, carved with a repeating motif of small interlocking circles",
+      "detail": "Cold cyan light leaks faintly from beneath it, like something enormous breathing on the other side.",
+      "x": 0.92,
+      "depth": 0.1,
+      "scale": 2.2,
+      "facing": "left",
+      "form3d": "wide"
+    },
+    {
+      "id": "ribbon_press",
+      "label": "a tall brass-and-glass press feeding out one long unbroken paper ribbon of running text, the ribbon curling onto the floor in loose coils",
+      "detail": "The text on the ribbon has no gaps in it at all — not between words, not between sentences. Just one continuous run of letters.",
+      "x": 0.12,
+      "depth": 0.5,
+      "scale": 1.3,
+      "facing": "right",
+      "form3d": "tall"
+    },
+    {
+      "id": "cutter_wheel",
+      "label": "a heavy chrome cutting wheel mounted on a low bench, its rim set with blades of many different widths, some as wide as a hand and some hair-thin",
+      "detail": "The widest blades are worn almost smooth. The thin ones are barely marked — whatever this cuts, it mostly cuts into big pieces.",
+      "x": 0.38,
+      "depth": 0.6,
+      "scale": 1,
+      "facing": "right",
+      "form3d": "wide"
+    },
+    {
+      "id": "token_bin",
+      "label": "an open crate heaped with small cream-coloured tiles, each stamped with a fragment of a word, some whole words and some only two or three letters",
+      "detail": "You pick one out. It reads 'ing'. Not a word, but you have seen it at the end of a thousand of them.",
+      "x": 0.58,
+      "depth": 0.72,
+      "scale": 0.75,
+      "facing": "left",
+      "form3d": "small"
+    },
+    {
+      "id": "vocab_board",
+      "label": "a free-standing pegboard panel on short legs, its face hung with numbered cream tiles in long ordered rows, each tile a word-fragment paired with a number",
+      "detail": "Fifty thousand pegs, give or take. Every fragment the machine is able to think in, and nothing outside this board exists to it.",
+      "x": 0.8,
+      "depth": 0.35,
+      "scale": 1.4,
+      "facing": "left",
+      "form3d": "tall"
+    },
+    {
+      "id": "coordinate_cabinet",
+      "label": "a wall of narrow brass drawers, one drawer pulled open to show a long punched card ruled with hundreds of tiny numbered positions",
+      "detail": "Each card is the same length. A card for 'king' and a card for 'thursday' take up exactly as much room as each other.",
+      "x": 0.15,
+      "depth": 0.45,
+      "scale": 1.3,
+      "facing": "right",
+      "form3d": "tall"
+    },
+    {
+      "id": "meaning_orrery",
+      "label": "a slow-turning orrery of glowing cyan points suspended in open air, clusters of points drifting near each other and far from other clusters",
+      "detail": "Two points almost touching are labelled 'boat' and 'ship'. A long way off, by itself, sits 'ship' again — the one that means to send something.",
+      "x": 0.44,
+      "depth": 0.3,
+      "scale": 1.5,
+      "anchor": "floating",
+      "facing": "left",
+      "form3d": "tall"
+    },
+    {
+      "id": "position_rail",
+      "label": "a long horizontal rail running the width of the room, marked along its length with interleaved sine and cosine waves of different frequencies",
+      "detail": "Without this, the machine would read a sentence as a heap of words with no order — the same heap whichever way round you put them.",
+      "x": 0.66,
+      "depth": 0.78,
+      "scale": 1.1,
+      "facing": "left",
+      "form3d": "wide"
+    },
+    {
+      "id": "vector_lamp",
+      "label": "a glass lamp on a stand projecting a single word-token upward as a constellation of several hundred faintly lit points at varying brightness",
+      "detail": "The word is just 'bank'. Three hundred and seven of its points are lit, and not one of them means river or money on its own.",
+      "x": 0.86,
+      "depth": 0.55,
+      "scale": 0.9,
+      "facing": "left",
+      "form3d": "tall"
+    },
+    {
+      "id": "head_bank",
+      "label": "eight narrow cabinets bolted together into one free-standing unit, each panel strung with its own distinct pattern of glowing cyan connecting wires",
+      "detail": "The same sentence goes into all eight. The wiring in the third one lights up only between verbs and the things they act on.",
+      "x": 0.2,
+      "depth": 0.42,
+      "scale": 1.5,
+      "facing": "right",
+      "form3d": "wide"
+    },
+    {
+      "id": "concat_loom",
+      "label": "a wide loom braiding eight separate cyan ribbons into one thick cord, the eight strands still faintly visible inside the finished braid",
+      "detail": "Nothing is thrown away here. Eight partial readings of the same sentence, laid side by side and handed on as one.",
+      "x": 0.5,
+      "depth": 0.6,
+      "scale": 1.2,
+      "facing": "right",
+      "form3d": "wide"
+    },
+    {
+      "id": "ffn_furnace",
+      "label": "a squat two-chambered furnace, the lower chamber much wider than the upper one, with a single token passing through it alone and glowing",
+      "detail": "Each word goes through on its own, touching none of the others. Whatever it learned from its neighbours, it brought in with it.",
+      "x": 0.72,
+      "depth": 0.72,
+      "scale": 1,
+      "facing": "left",
+      "form3d": "wide"
+    },
+    {
+      "id": "residual_pipe",
+      "label": "a thick straight pipe running the entire length of the room just above head height, bypassing every machine beneath it without connecting",
+      "detail": "A tap lets each machine add to what the pipe carries. None of them is allowed to empty it. Whatever came in is still in there.",
+      "x": 0.5,
+      "depth": 0.12,
+      "scale": 2.2,
+      "anchor": "hanging",
+      "facing": "left",
+      "form3d": "wide"
+    },
+    {
+      "id": "logit_array",
+      "label": "a wide curved bank of upright glass tubes of markedly different heights, a few towering and most barely filled, each tube labelled at its base",
+      "detail": "One tube stands far above the rest. Four or five others are well up. The remaining fifty thousand are a flat shimmer along the bottom.",
+      "x": 0.22,
+      "depth": 0.5,
+      "scale": 1.4,
+      "facing": "right",
+      "form3d": "wide"
+    },
+    {
+      "id": "softmax_wheel",
+      "label": "a large horizontal wheel divided into wedges of wildly unequal width, one wedge taking almost half the wheel and the rest slivers",
+      "detail": "The wheel does not pick the biggest wedge. It spins, and the biggest wedge simply wins most of the time.",
+      "x": 0.5,
+      "depth": 0.68,
+      "scale": 1.1,
+      "facing": "left",
+      "form3d": "wide"
+    },
+    {
+      "id": "temperature_dial",
+      "label": "a heavy brass dial set into a console, its engraved scale running from FROZEN at one end through WARM to MOLTEN at the other",
+      "detail": "Turned to frozen, the wheel always lands on the widest wedge. Turned to molten, the slivers start winning.",
+      "x": 0.72,
+      "depth": 0.8,
+      "scale": 0.7,
+      "facing": "left",
+      "form3d": "small"
+    },
+    {
+      "id": "emission_lens",
+      "label": "a tall lens on a mount at the far end of the room, throwing one single chosen word in bright cream light onto the wall beyond it",
+      "detail": "One word. Then the whole machine runs again from the beginning, with that word added to the end of what it was given.",
+      "x": 0.9,
+      "depth": 0.28,
+      "scale": 1.3,
+      "facing": "left",
+      "form3d": "tall"
+    }
+  ],
+  "places": [
+    {
+      "id": "tokenizer_yard",
+      "name": "The Tokenizer Yard",
+      "teaches": "Text is not fed to the model as text. It is cut into tokens — common words whole, rarer words into fragments — and each token is looked up as a number in a fixed vocabulary. The model can only think in pieces that are on that board.",
+      "backdrop": {
+        "description": "A long industrial receiving yard rendered as a technical diagram: chalkboard-navy walls, a paper-cream floor ruled with faint graphite grid-lines, and a high ceiling of thin girders. Daylight-cool panels glow along the upper walls. The room runs left to right like a production line, with empty bench space and low cream-tiled kerbs marking where machinery stands. One wall at the far right is a tall blank pegboard face. Everything is clean, ordered and unhurried, like a diagram of a factory rather than a factory.",
+        "mood": "bright, orderly, the quiet of a workshop before the shift starts",
+        "horizon": 0.58,
+        "palette": {
+          "key": "#f3ead9",
+          "shadow": "#1b2240",
+          "accent": "#e8a628"
+        },
+        "atmosphere": "dust motes",
+        "atmosphere_intensity": 0.25
+      },
+      "cast": [
+        "ribbon_press",
+        "cutter_wheel",
+        "token_bin",
+        "vocab_board",
+        "keeper_01"
+      ],
+      "environment3d": {
+        "description": "a vast navy industrial hall drawn like a 1960s technical diagram, thin cream girders overhead",
+        "ground_cover": "paper-cream floor tiles ruled with faint graphite grid lines",
+        "palette": {
+          "ground": "#e9e0cc",
+          "fog": "#1b2240",
+          "light": "#f3ead9",
+          "ambient": "#3a4470",
+          "scatter": "#e8a628"
+        },
+        "light_level": 0.72,
+        "visibility": 0.75,
+        "scatter_density": 0.18
+      },
+      "stage3d": {
+        "keeper_01": {
+          "x": 1.5,
+          "z": -2.5
+        },
+        "ribbon_press": {
+          "x": -7,
+          "z": -7
+        },
+        "cutter_wheel": {
+          "x": -1.5,
+          "z": -9.5
+        },
+        "token_bin": {
+          "x": 4,
+          "z": -5.5
+        },
+        "vocab_board": {
+          "x": 8.5,
+          "z": -10.5
+        }
+      }
+    },
+    {
+      "id": "embedding_vault",
+      "name": "The Embedding Vault",
+      "teaches": "Each token number becomes a long list of numbers — a vector — and that vector is the only thing the model knows about the word. Similar meanings sit near each other. A separate positional signal is added so the model can tell word order, which it otherwise could not.",
+      "backdrop": {
+        "description": "A deep vaulted strongroom drawn as an information-design plate: chalkboard-navy walls lined floor to ceiling with the brass fronts of narrow filing drawers, a paper-cream floor ruled with graphite grid-lines, and a low barrel ceiling lit by soft cyan orbital rings. The far end opens into darkness. The middle of the floor is clear and open, with a faint ruled circle inlaid in the cream, as though something is meant to stand there.",
+        "mood": "cool, hushed, archival — a library that has never been noisy",
+        "horizon": 0.64,
+        "palette": {
+          "key": "#e9e2d2",
+          "shadow": "#161c36",
+          "accent": "#28e0e8"
+        },
+        "atmosphere": "dust motes",
+        "atmosphere_intensity": 0.35
+      },
+      "cast": [
+        "coordinate_cabinet",
+        "meaning_orrery",
+        "position_rail",
+        "vector_lamp",
+        "keeper_01"
+      ],
+      "environment3d": {
+        "description": "a deep vaulted navy strongroom lined with brass filing drawers under soft cyan orbital rings",
+        "ground_cover": "paper-cream floor ruled with graphite grid lines and an inlaid circle",
+        "palette": {
+          "ground": "#e3dccb",
+          "fog": "#161c36",
+          "light": "#e9e2d2",
+          "ambient": "#2a3a66",
+          "scatter": "#28e0e8"
+        },
+        "light_level": 0.58,
+        "visibility": 0.62,
+        "scatter_density": 0.12
+      },
+      "stage3d": {
+        "keeper_01": {
+          "x": -1.5,
+          "z": -2.5
+        },
+        "coordinate_cabinet": {
+          "x": -8,
+          "z": -8.5
+        },
+        "meaning_orrery": {
+          "x": 0,
+          "z": -11.5,
+          "scale": 1.2
+        },
+        "position_rail": {
+          "x": 6.5,
+          "z": -6.5
+        },
+        "vector_lamp": {
+          "x": -3.5,
+          "z": -5,
+          "scale": 0.6
+        }
+      }
+    },
+    {
+      "id": "attention_hall",
+      "name": "The Attention Hall",
+      "teaches": "Every token asks a question (its Query) and every token advertises what it offers (its Key). Matching a query against all the keys scores how much each word should attend to each other word; those scores become weights, and each token takes a weighted blend of the others' Values. This is how a word's meaning is adjusted by its context.",
+      "backdrop": {
+        "description": "A vast chalkboard-navy hall like the inside of a technical diagram made architecture: a long nave whose floor is paper-cream and ruled faintly with thin graphite grid-lines, as if drawn on engineer's paper. Overhead, the vaulted ceiling is lined with soft glowing orbital rings, suggesting circuitry rather than stone. Far in the distance down the hall, a massive dark archway looms, unlit, clearly leading deeper toward something larger. Three low stone-pale plinths stand evenly spaced on the floor at mid-distance, currently dark and inactive, graphite grey.",
+        "mood": "calm, reverent, like a planetarium before the show starts",
+        "horizon": 0.62,
+        "palette": {
+          "key": "#f3ead9",
+          "shadow": "#1b2240",
+          "accent": "#28e0e8"
+        },
+        "atmosphere": "dust motes",
+        "atmosphere_intensity": 0.3
+      },
+      "cast": [
+        "keeper_01",
+        "sentence_overhead",
+        "plinth_tokens",
+        "plinth_qk",
+        "plinth_values",
+        "archway_deep"
+      ],
+      "environment3d": {
+        "description": "a vast navy hall like a technical diagram made architecture, vaulted ceiling of glowing cyan rings",
+        "ground_cover": "paper-cream floor ruled faintly with thin graphite grid lines",
+        "palette": {
+          "ground": "#f0e7d6",
+          "fog": "#1b2240",
+          "light": "#f3ead9",
+          "ambient": "#2f3b6b",
+          "scatter": "#28e0e8"
+        },
+        "light_level": 0.62,
+        "visibility": 0.7,
+        "scatter_density": 0.08
+      },
+      "stage3d": {
+        "keeper_01": {
+          "x": -2,
+          "z": -2.5
+        },
+        "sentence_overhead": {
+          "x": 0,
+          "z": -13,
+          "scale": 1.4
+        },
+        "plinth_tokens": {
+          "x": -5,
+          "z": -7.5
+        },
+        "plinth_qk": {
+          "x": 0,
+          "z": -7.5
+        },
+        "plinth_values": {
+          "x": 5,
+          "z": -7.5
+        },
+        "archway_deep": {
+          "x": 0,
+          "z": -22,
+          "scale": 2.2
+        }
+      }
+    },
+    {
+      "id": "head_gallery",
+      "name": "The Gallery of Heads",
+      "teaches": "Attention is run many times in parallel — several heads, each learning to look for a different kind of relation — and their results are joined back together. After that each position passes alone through a feed-forward layer. A residual path carries the original signal around both, so nothing is lost, and this whole block repeats dozens of times.",
+      "backdrop": {
+        "description": "A long gallery drawn as a cutaway technical plate: chalkboard-navy, with a paper-cream floor ruled in graphite and a high ceiling crossed by thin structural lines. The left wall is a run of identical tall recesses, evenly spaced, each lit from within by a faint cool glow. The right side is open floor. Overhead the ceiling carries bracket mounts for a long horizontal run of pipework. Repetition is the whole character of the room: the same bay, over and over, receding toward a vanishing point.",
+        "mood": "industrious, humming, many things happening at once in parallel",
+        "horizon": 0.6,
+        "palette": {
+          "key": "#efe6d4",
+          "shadow": "#1a2140",
+          "accent": "#28e0e8"
+        },
+        "atmosphere": "none",
+        "atmosphere_intensity": 0
+      },
+      "cast": [
+        "head_bank",
+        "concat_loom",
+        "ffn_furnace",
+        "residual_pipe",
+        "keeper_01"
+      ],
+      "environment3d": {
+        "description": "a long navy gallery of identical lit recesses repeating to a vanishing point, pipework above",
+        "ground_cover": "paper-cream floor ruled with graphite grid lines",
+        "palette": {
+          "ground": "#ebe2cf",
+          "fog": "#1a2140",
+          "light": "#efe6d4",
+          "ambient": "#34406e",
+          "scatter": "#28e0e8"
+        },
+        "light_level": 0.66,
+        "visibility": 0.66,
+        "scatter_density": 0.12
+      },
+      "stage3d": {
+        "keeper_01": {
+          "x": -1.5,
+          "z": -2.5
+        },
+        "head_bank": {
+          "x": -7.5,
+          "z": -8.5,
+          "scale": 1.2
+        },
+        "concat_loom": {
+          "x": 1.5,
+          "z": -9.5
+        },
+        "ffn_furnace": {
+          "x": 8,
+          "z": -5.5
+        },
+        "residual_pipe": {
+          "x": 0,
+          "z": -15,
+          "scale": 1.6
+        }
+      }
+    },
+    {
+      "id": "output_observatory",
+      "name": "The Output Observatory",
+      "teaches": "At the end the model produces one score for every token in the vocabulary — the logits. Softmax turns those scores into probabilities, and one token is sampled from them; temperature controls how sharply the highest score dominates. That single token is appended to the input and the entire machine runs again.",
+      "backdrop": {
+        "description": "A domed observatory rendered as a poster-flat technical diagram: chalkboard-navy dome ribbed with thin graphite meridians, a paper-cream floor ruled in a faint radial grid, and a wide blank wall at the far right kept clear as a projection surface. Low consoles with blank faces ring the edge of the room. A tall slot in the dome admits a single narrow shaft of cool light down onto the centre of the floor. The room feels like the last room — there is nowhere further in.",
+        "mood": "expectant, the held breath before an answer",
+        "horizon": 0.66,
+        "palette": {
+          "key": "#f1e8d6",
+          "shadow": "#141a32",
+          "accent": "#e04f4f"
+        },
+        "atmosphere": "dust motes",
+        "atmosphere_intensity": 0.2
+      },
+      "cast": [
+        "logit_array",
+        "softmax_wheel",
+        "temperature_dial",
+        "emission_lens",
+        "keeper_01"
+      ],
+      "environment3d": {
+        "description": "a domed navy observatory ribbed with graphite meridians, one shaft of cool light from above",
+        "ground_cover": "paper-cream floor ruled in a faint radial grid",
+        "palette": {
+          "ground": "#efe5d2",
+          "fog": "#141a32",
+          "light": "#f1e8d6",
+          "ambient": "#2c3360",
+          "scatter": "#e04f4f"
+        },
+        "light_level": 0.52,
+        "visibility": 0.6,
+        "scatter_density": 0.08
+      },
+      "stage3d": {
+        "keeper_01": {
+          "x": -2,
+          "z": -2.5
+        },
+        "logit_array": {
+          "x": -7.5,
+          "z": -8.5,
+          "scale": 1.2
+        },
+        "softmax_wheel": {
+          "x": 0,
+          "z": -7.5
+        },
+        "temperature_dial": {
+          "x": 5,
+          "z": -4.5
+        },
+        "emission_lens": {
+          "x": 6.5,
+          "z": -13.5
+        }
+      }
+    }
+  ],
+  "opening": {
+    "place": "tokenizer_yard",
+    "playerX": 0.3
+  }
+}

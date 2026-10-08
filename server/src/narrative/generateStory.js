@@ -15,6 +15,7 @@ import {
   summarizeForMemorylessTurn2D,
 } from "./prompts2d.js";
 import { makeStringStreamer } from "./partialJson.js";
+import { snapToPack, repairPackRelocation } from "iwg-shared/pack";
 
 const TOOL_NAMES = new Set([STORY_TOOL.name, STORY_DELTA_TOOL.name]);
 
@@ -237,6 +238,8 @@ export async function generateStory({
   sourceText,
   ablation,
   bible,
+  pack,
+  currentPlaceId,
   history,
   turnMessage,
   lastState,
@@ -256,6 +259,8 @@ export async function generateStory({
     sourceText,
     ablation,
     bible,
+    pack,
+    currentPlaceId,
     lastState,
     prevStats,
     currentActors,
@@ -272,6 +277,10 @@ export async function generateStory({
 
   const startedAt = Date.now();
   let response, state;
+  // Pack games also report which pinned place the turn resolved to, and what had to be
+  // corrected to get there.
+  let placeId = currentPlaceId ?? null;
+  let snapReport = null;
   let lastViolations = [];
   let spatial = null;
   let attempts = 0;
@@ -332,6 +341,19 @@ export async function generateStory({
       let fixed = raw;
       const notes = [];
 
+      // A pack relocation first: it is the one "violation" that is actually correct
+      // output. The model empties the room to walk out of it and does not re-list the
+      // room it walks into, because it has been told that room already exists. Dressing
+      // the new room from the manifest turns a rejected turn into a valid one without
+      // inventing anything.
+      if (pack && fixed.relocate_to) {
+        const reloc = repairPackRelocation(fixed, pack, currentActors);
+        if (reloc.repaired) {
+          fixed = reloc.turn;
+          notes.push(`dressed ${reloc.placeId} with its pinned cast for the move`);
+        }
+      }
+
       // Shape first: everything downstream assumes scene.actors exists.
       const shape = repairTurnShape(fixed);
       if (shape.repaired) {
@@ -370,6 +392,26 @@ export async function generateStory({
 
     if (check.valid) {
       state = usingDelta ? materializeDeltaTurn(candidate, lastState) : candidate;
+
+      // In a pack game the scenery was bought in advance, so every string an image is
+      // painted from is forced back to the manifest here — before the renderer sees the
+      // scene and therefore before it can request a picture that does not exist. The
+      // prose, choices, beats and stats are the model's and are left alone.
+      if (pack) {
+        const snap = snapToPack(state, pack, { currentPlaceId });
+        state = snap.turn;
+        placeId = snap.placeId;
+        snapReport = snap.report;
+        if (snap.report.invented.length) {
+          console.warn(
+            `[generateStory] pack: dropped ${snap.report.invented.length} actor(s) with no ` +
+              `artwork (${snap.report.invented.join(", ")})`
+          );
+        }
+        if (snap.report.keptPlace) {
+          console.warn("[generateStory] pack: the model described a place this pack does not have; stayed put");
+        }
+      }
 
       // Relax collisions before anything downstream sees the scene, so the renderer, the
       // reach test and the player's spawn all agree on where things actually are.
@@ -436,5 +478,5 @@ export async function generateStory({
     : history;
 
   const usage = response.usage ? { ...response.usage, attempts: attempts + 1 } : null;
-  return { state, newHistory, usage, latencyMs, spatial };
+  return { state, newHistory, usage, latencyMs, spatial, placeId, snapReport };
 }

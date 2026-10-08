@@ -6,6 +6,10 @@ import { styleLine, negativeLine } from "./styleBible.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, "..", "..", ".art-cache");
+// A pack carries its own artwork, committed alongside its manifest rather than left in
+// the generated cache. The cache is gitignored regenerable output; a pack's art is the
+// product, and has to travel to whoever is handed the game.
+const PACKS_DIR = path.join(__dirname, "..", "..", "..", "packs");
 const MODEL = process.env.IMAGE_MODEL || "gemini-3.1-flash-image";
 
 const apiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
@@ -60,6 +64,17 @@ function keyFor(text, kind) {
   for (let i = 0; i < clean.length; i++) h = ((h * 33) ^ clean.charCodeAt(i)) >>> 0;
   const slug = clean.replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
   return `${slug || "untitled"}-${h.toString(36)}`;
+}
+
+/**
+ * The on-disk name for one piece of art, in both the generated cache and a pack's own
+ * art directory. Exported so scripts/bake-pack.mjs can file a pack's artwork under
+ * exactly the name the server will later look for — the name is a hash of the
+ * description, so a pack baked under any other scheme would silently miss on every
+ * request and regenerate the whole game while someone waited.
+ */
+export function artFileName(kind, description) {
+  return `${kind}_${keyFor(description, kind)}.img`;
 }
 
 function cutoutRules() {
@@ -192,12 +207,23 @@ const MAX_ATTEMPTS = 2;
  */
 export async function getArt({ kind, description, bible, extra, regenerate = false }) {
   if (!ART_KINDS.includes(kind)) throw new Error(`unknown art kind '${kind}'`);
-  if (!artGenEnabled) throw new Error("art generation disabled (no API key)");
 
   const styleId = bible?.id || "nostyle";
-  const file = path.join(CACHE_DIR, styleId, `${kind}_${keyFor(description, kind)}.img`);
+  const name = `${kind}_${keyFor(description, kind)}.img`;
+  const file = path.join(CACHE_DIR, styleId, name);
 
   if (!regenerate) {
+    // A pack's own artwork is checked before the generated cache and before the API key
+    // is required at all, so a packaged game plays on a machine with no image key
+    // configured. That is the whole point of shipping one.
+    if (bible?.packId) {
+      try {
+        const shipped = await readFile(path.join(PACKS_DIR, bible.packId, "art", name));
+        return { buffer: shipped, contentType: sniffImageType(shipped), cached: true, fromPack: true };
+      } catch {
+        // not in the pack — fall through
+      }
+    }
     try {
       const cached = await readFile(file);
       return { buffer: cached, contentType: sniffImageType(cached), cached: true };
@@ -205,6 +231,9 @@ export async function getArt({ kind, description, bible, extra, regenerate = fal
       // miss — generate
     }
   }
+
+  // Only now does this need a key: everything above was served off disk.
+  if (!artGenEnabled) throw new Error("art generation disabled (no API key)");
 
   // A regeneration must not join the in-flight job it is trying to replace, but two
   // concurrent regenerations of the same image should still share one call.

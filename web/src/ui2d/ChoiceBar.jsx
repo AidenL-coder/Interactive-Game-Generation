@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { shortName } from "./labels.js";
 
 /**
  * The actions available this turn.
@@ -29,16 +30,8 @@ export default function ChoiceBar({
   // weed-stain, its one window dark"). A destination badge wants the name of the thing,
   // so take the first clause, drop the article, and keep it to a few words — a badge that
   // wraps to three lines is worse than one that says less.
-  function shortName(label) {
-    if (!label) return "there";
-    const head = String(label)
-      .split(/[,—(:]/)[0]
-      .trim()
-      .replace(/^(a|an|the)\s+/i, "");
-    const words = head.split(/\s+/);
-    const kept = words.length > 4 ? words.slice(-3).join(" ") : head;
-    return kept.length > 24 ? `${kept.slice(0, 22)}…` : kept;
-  }
+  // shortName lives in ./labels.js so it can be tested: it was wrong for a long time in
+  // a way that only ever showed up in a screenshot.
 
   function submitFree(e) {
     e.preventDefault();

@@ -34,6 +34,8 @@ export async function logGeneration({
   usage,
   latencyMs,
   spatial,
+  place,
+  snap,
   error,
 }) {
   const record = {
@@ -50,6 +52,11 @@ export async function logGeneration({
     // First-attempt spatial-consistency counters (dangling refs, duplicate ids,
     // out-of-bounds). Null for template/non-LLM turns.
     spatial: spatial ?? null,
+    // Pre-generated games only: which pinned place the turn resolved to, and what the
+    // snapper had to correct to keep it there. A pack whose snap report is never empty
+    // is a pack whose briefing needs work, and that is only visible if it is recorded.
+    place: place ?? null,
+    snap: snap ?? null,
     error: error ? String(error?.message || error) : null,
   };
   try {

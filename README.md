@@ -20,8 +20,10 @@ walking there *is* the act of choosing — the stage is load-bearing, not scener
 ```
 web/     React frontend. web/src/stage/ is the 2D renderer; web/src/scene/ is the 3D one
 server/  Express. Wraps Claude for narrative and art direction, Gemini for illustration
-shared/  The generation contracts: story2d.js (2D) and worldState.js (3D)
+shared/  The generation contracts: story2d.js (2D), pack.js (pre-generated worlds), worldState.js (3D)
 docs/    Research framing: problem formulation, related work, ablations, eval plan
+packs/   pre-generated games that start instantly — see "Pre-generated games" below
+eval/    the play-and-judge harness and the ablation scorers
 scripts/ verification harnesses — see "Verifying changes" below
 ```
 
@@ -53,6 +55,51 @@ global despill pass because JPEG smears the backdrop colour several pixels into 
 subject. Everything caches to disk under the art direction's id, so a description that
 recurs is painted once.
 
+## Pre-generated games
+
+Typing a premise and waiting sixty to ninety seconds is fine when it is your own
+project and ruinous when you are handing a laptop to somebody. A **pack** fixes the
+expensive half of generation and leaves the rest live: the art direction, the places,
+the cast and every illustration are painted in advance and committed to the repo, while
+the prose, the choices, the consequences, the objective and the ending are still written
+per playthrough. Two people playing the same pack do not play the same game.
+
+```
+packs/attention-engine/
+  pack.json     the manifest: art direction, 5 places, 22 cast, 3 stats, the premise
+  art/          29 pictures, ~23MB — the reason it starts instantly
+```
+
+`packs/attention-engine` is a game about how a transformer actually works: you carry one
+sentence through the tokenizer, the embedding vault, the attention hall, the gallery of
+heads and the output observatory, and the sentence decays a word a turn while you do it.
+The Keeper will not let you past a stage you cannot explain.
+
+A pack is **not** the template baseline. `server/src/narrative/templateBaseline.js` is the
+ablation arm where the *story* is canned; here only the scenery is bought in advance.
+Sessions record `worldSource: "generated" | "pack"` so the two are never pooled by
+accident.
+
+The hard requirement is that a pack never generates anything while somebody is waiting,
+and that cannot rest on the model copying a 400-character painter's brief word for word,
+because it will paraphrase. So the manifest pins every string an image is painted from
+and `snapToPack` in [`shared/pack.js`](shared/pack.js) overwrites whatever the model
+wrote before any art is requested — backdrop, labels, details, and the declared stats.
+Prompting asks for compliance; snapping guarantees it. Actors the model invents are
+dropped rather than rendered as blank shapes, and a room is refilled from the manifest
+rather than left empty.
+
+```bash
+node scripts/bake-pack.mjs attention-engine --check   # would this pack make anyone wait?
+node scripts/bake-pack.mjs attention-engine           # paint whatever is missing
+```
+
+`--check` enumerates the manifest rather than trusting a playthrough to have touched
+everything: a story that never walks into the fifth room would leave that room unpainted,
+and the gap would otherwise surface in front of an audience. Because a pack's art is read
+from its own directory before the generated cache and before the API key is checked, a
+packaged game plays on a machine with no image key configured at all.
+
 ## Setup
 
 Requires **Node.js ≥ 18**.
@@ -72,7 +119,7 @@ cp server/.env.example server/.env    # then fill in the keys below
 ```bash
 npm run dev:server   # http://localhost:3001
 npm run dev:web      # http://localhost:5173  (proxies /api -> :3001)
-npm test             # 214 dependency-free tests over the contracts and the compositor
+npm test             # 374 dependency-free tests: the contracts, the compositor, the rubric
 ```
 
 ## Playing
@@ -116,14 +163,56 @@ different presentation. `web/src/App.jsx` mounts the 2D game.
 
 ## Verifying changes
 
-Three harnesses, because the defects in this project come in three kinds and each is
-invisible to the tools that catch the other two.
+Four harnesses, because the defects in this project come in four kinds and each is
+invisible to the tools that catch the other three.
 
 ```bash
+node eval/play-and-judge.mjs --turns 14          # asks whether anyone would enjoy it
 node scripts/playthrough.mjs --turns 16          # plays a real game in a real browser
 node scripts/motion-probe.mjs                    # measures what happens while walking
 node scripts/pressure-check.mjs                  # asks whether a session had stakes
 ```
+
+**`eval/play-and-judge.mjs`** is the "is it fun" instrument, and the only one that
+answers a question about the player rather than the program. It runs two agents and a
+calculator, kept independent:
+
+- a **player** drives a real browser and sees nothing but screenshots. It has no access
+  to the scene JSON, the session state or the log, because a person sitting at the
+  machine does not either. It reads the screen, presses a button or clicks the painting,
+  and reports in the moment how engaged it is, whether the choices felt like different
+  things to do, and anything it could not make sense of.
+- a **judge** is shown the same screenshots afterwards and scores nine dimensions
+  against an anchored rubric — three of them visual, which is the whole reason this
+  works on pixels. Whether twelve independently generated pictures look like one game is
+  invisible in the data structure that produced them and obvious on screen.
+- **`playMetrics`** counts what actually happened — which stats moved, how often, whether
+  progress went backwards — asking no model anything.
+
+The judge never sees the player's ratings. If it could, it would anchor on them and the
+two would stop being independent measurements, at which point agreement proves nothing.
+Keeping them apart is what lets the report print the line that is most worth reading:
+*the judge scored stakes 4.5/5 but no tracked stat moved consistently — the prose is
+asserting pressure the mechanics never apply.*
+
+The rubric fights the standard LLM-judge failure of scoring everything a 7. Evidence is
+ordered before the score in the tool schema so a score cannot be written first and
+justified afterwards; naming the single biggest problem is required, so a clean sheet is
+not available; and the calibration says plainly that **3 is the expected score** and a
+report where everything is a 4 is useless. `--samples 3` runs the judge three times and
+reports the spread, because an instrument whose reading moves two points between
+identical runs cannot support a claim about a one-point difference between conditions.
+
+```bash
+node eval/play-and-judge.mjs --pack attention-engine   # score a pre-generated game
+node eval/play-and-judge.mjs --samples 3               # judge 3x, report the spread
+node eval/play-and-judge.mjs --judge-only eval/out/…   # re-score, no replay
+node eval/play-and-judge.mjs --headed                  # watch it play
+```
+
+It found four real defects on its first run against a working game, including one — the
+narrative column cutting a sentence in half at the bottom of the frame — that every
+other harness had been walking past for a dozen playthroughs.
 
 **`playthrough.mjs`** drives a browser through an actual game and screenshots each beat.
 It catches what a still frame reveals: art that failed to key out, figures standing on

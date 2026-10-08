@@ -11,6 +11,7 @@ import {
   summarizeStateForMemorylessTurn,
 } from "./prompts.js";
 import { generateTemplateScene } from "./templateBaseline.js";
+import { snapToPack3d, repairPackRelocation3d } from "iwg-shared/pack3d";
 
 // Pulls the emit_scene tool-call input out of an Anthropic response. We force
 // tool_choice to this exact tool, so a well-formed response always contains it —
@@ -120,7 +121,7 @@ function propIdsAfter(turn, currentProps) {
 // `scene`, plus the `scene_delta` that produced it. The client needs both — the full
 // scene to know what the world *is*, the delta to know what to animate rather than
 // snapping everything into place.
-function materializeDeltaTurn(turn, lastWorldState) {
+export function materializeDeltaTurn(turn, lastWorldState) {
   const prev = lastWorldState?.scene;
 
   if (turn.scene) {
@@ -130,13 +131,27 @@ function materializeDeltaTurn(turn, lastWorldState) {
 
   // No delta at all is legal and means "nothing physical changed this turn" — the
   // previous scene carries forward untouched.
+  //
+  // This used to rebuild the scene as `{ biome, mood, time_of_day, props }` — the shape
+  // from before the fixed biome vocabulary was removed — and read `ambient.mood` and
+  // `ambient.time_of_day`, which the delta schema no longer has. So every delta turn
+  // silently dropped `scene.environment` from the world state, and every lighting or
+  // weather shift the model asked for through `ambient` was thrown away. It went
+  // unnoticed because the renderer applies a delta without re-reading the environment;
+  // anything that did read it afterwards — a relocation's carried state, the log, the
+  // pack snapper — got nothing.
   const delta = turn.scene_delta || {};
+  const ambient = delta.ambient || {};
+  const prevEnv = prev?.environment || {};
   return {
     ...turn,
     scene: {
-      biome: prev?.biome,
-      mood: delta.ambient?.mood ?? prev?.mood,
-      time_of_day: delta.ambient?.time_of_day ?? prev?.time_of_day,
+      environment: {
+        ...prevEnv,
+        ...(ambient.palette ? { palette: { ...(prevEnv.palette || {}), ...ambient.palette } } : {}),
+        ...(typeof ambient.light_level === "number" ? { light_level: ambient.light_level } : {}),
+        ...(typeof ambient.visibility === "number" ? { visibility: ambient.visibility } : {}),
+      },
       props: applySceneDelta(prev?.props || [], delta),
     },
     scene_delta: turn.scene_delta || null,
@@ -166,6 +181,9 @@ export async function generateScene({
   history,
   turnMessage,
   lastWorldState,
+  pack = null,
+  currentPlaceId = null,
+  turnIndex = 0,
 }) {
   // Non-LLM baseline (docs/research.md "Known gaps"): no model call, no history, just
   // a fixed recipe — the floor the LLM conditions should be compared against.
@@ -186,6 +204,9 @@ export async function generateScene({
     ablation,
     lastWorldState,
     currentProps,
+    pack,
+    currentPlaceId,
+    turnIndex,
   });
 
   const userContent = ablation.evolving
@@ -201,6 +222,10 @@ export async function generateScene({
   let lastViolations = [];
   let spatial = null;
   let attempts = 0;
+  // Pack games also report which pinned place the turn resolved to and what had to be
+  // corrected to keep it there.
+  let placeId = currentPlaceId;
+  let snapReport = null;
 
   for (; attempts < MAX_GENERATION_ATTEMPTS; attempts++) {
     response = await anthropic.messages.create({
@@ -239,6 +264,25 @@ export async function generateScene({
 
     // Salvage an otherwise-good turn whose only fault is unplayable action targets.
     let candidate = rawCandidate;
+
+    // A pack relocation first, because it is the one "invalid" turn that is actually
+    // correct: the model empties the room to walk out of it and does not re-list the
+    // room it walks into, having been told that room already exists. The 3D contract
+    // then fails it for too few props and the move is retried away. Rewriting it as a
+    // full-scene relocation — the contract's own shape for "somewhere new" — makes it
+    // valid without inventing anything.
+    if (!check.valid && pack && rawCandidate?.relocate_to) {
+      const reloc = repairPackRelocation3d(rawCandidate, pack);
+      if (reloc.repaired) {
+        const recheck = validate(reloc.turn);
+        if (recheck.valid) {
+          console.warn(`[generateScene] pack: built ${reloc.placeId} from the manifest for the move`);
+          candidate = reloc.turn;
+          check = recheck;
+        }
+      }
+    }
+
     if (!check.valid) {
       const { turn: fixed, repaired } = repairAgentActions(
         rawCandidate,
@@ -255,9 +299,25 @@ export async function generateScene({
     }
 
     if (check.valid) {
-      worldState = ensureUngatedChoice(
-        usingDelta ? materializeDeltaTurn(candidate, lastWorldState) : candidate
-      );
+      worldState = usingDelta ? materializeDeltaTurn(candidate, lastWorldState) : candidate;
+
+      // In a pack game every string an asset is built from — the environment's sky and
+      // ground briefs, each prop's label and form — is forced back to the manifest here,
+      // before the client sees the scene and therefore before it can ask for geometry or
+      // a texture that was never built. The prose, choices, actions and stats beyond the
+      // declared ones are the model's.
+      if (pack) {
+        const snap = snapToPack3d(worldState, pack, { currentPlaceId });
+        worldState = snap.worldState;
+        placeId = snap.placeId;
+        snapReport = snap.report;
+        if (snap.report.invented.length) {
+          console.warn(`[generateScene] pack: dropped ${snap.report.invented.length} prop(s) with no assets (${snap.report.invented.join(", ")})`);
+        }
+        if (snap.report.relocated) console.log(`[generateScene] pack: moved to ${snap.placeId}`);
+      }
+
+      worldState = ensureUngatedChoice(worldState);
       worldState.state_updates = mergeState(
         lastWorldState?.state_updates,
         worldState.state_updates
@@ -307,5 +367,5 @@ export async function generateScene({
     : history;
 
   const usage = response.usage ? { ...response.usage, attempts: attempts + 1 } : null;
-  return { worldState, newHistory, usage, latencyMs, spatial };
+  return { worldState, newHistory, usage, latencyMs, spatial, placeId, snapReport };
 }

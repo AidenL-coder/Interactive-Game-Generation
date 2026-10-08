@@ -8,12 +8,24 @@ async function handle(res) {
   return res.json();
 }
 
-export function startSession({ profile, sourceText, ablation }) {
+export function startSession({ profile, sourceText, ablation, packId }) {
   return fetch(`${BASE}/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ profile, sourceText, ablation }),
+    body: JSON.stringify({ profile, sourceText, ablation, packId }),
   }).then(handle);
+}
+
+/** Pre-generated games that have a 3D world. Empty on any failure — the screen still works. */
+export async function fetchPacks3d() {
+  try {
+    const res = await fetch(`${BASE}/packs`);
+    if (!res.ok) return [];
+    const { packs = [] } = await res.json();
+    return packs.filter((p) => p.engines?.includes("3d"));
+  } catch {
+    return [];
+  }
 }
 
 export function sendChoice(sessionId, { choiceId, freeText }) {

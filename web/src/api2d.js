@@ -57,13 +57,28 @@ async function readSSE(res, handlers) {
  * @param {object} [args.ablation]
  * @param {object} handlers - { status, style, prose, proseReset }
  */
-export async function startStory({ profile, sourceText, ablation }, handlers = {}) {
+export async function startStory({ profile, sourceText, ablation, packId }, handlers = {}) {
   const res = await fetch(`${BASE}/2d/sessions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ profile, sourceText, ablation }),
+    body: JSON.stringify({ profile, sourceText, ablation, packId }),
   });
   return consumeTurn(res, handlers);
+}
+
+/**
+ * The pre-generated games. These start immediately because their world is already
+ * painted; only the writing is live.
+ */
+export async function fetchPacks() {
+  try {
+    const res = await fetch(`${BASE}/2d/packs`);
+    if (!res.ok) return [];
+    return (await res.json()).packs || [];
+  } catch {
+    // The start screen is still perfectly usable without them.
+    return [];
+  }
 }
 
 /** Takes a turn. Same streaming contract as startStory. */

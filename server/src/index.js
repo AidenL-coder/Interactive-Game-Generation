@@ -10,6 +10,7 @@ import { getTexture, textureGenEnabled } from "./textures/textureGen.js";
 import { getModel, modelGenEnabled } from "./models/modelGen.js";
 import { getGeometry, geometryGenEnabled } from "./geometry/geometryGen.js";
 import { router as router2d } from "./routes2d.js";
+import { loadPack, listPacks } from "./packs/loadPack.js";
 import { PROP_FORMS } from "iwg-shared";
 
 const app = express();
@@ -26,6 +27,7 @@ function publicSession(session) {
     ablation: session.ablation,
     turnIndex: session.turnIndex,
     worldState: session.lastWorldState,
+    placeId: session.placeId ?? null,
   };
 }
 
@@ -33,10 +35,10 @@ function publicSession(session) {
 // reach the browser. A 503 here is a normal, expected mode (no key configured) — the
 // renderer treats it as "use the procedural fallback", not as an error.
 app.get("/api/texture", async (req, res) => {
-  if (!textureGenEnabled) {
-    return res.status(503).json({ error: "texture generation disabled (no API key configured)" });
-  }
-
+  // No up-front "no key" refusal any more: a pack ships its own textures and those must
+  // be served on a machine with no image key at all. getTexture only demands the key
+  // when it would actually have to generate something, and the catch below turns that
+  // into the same 503 the renderer already treats as "use the procedural fallback".
   const { kind = "ground", type: propType, label, light_level: lightLevel } = req.query;
 
   if (!["ground", "sky", "prop", "sprite"].includes(kind)) {
@@ -65,6 +67,9 @@ app.get("/api/texture", async (req, res) => {
     res.set("Cache-Control", "public, max-age=86400");
     res.send(buffer);
   } catch (err) {
+    if (!textureGenEnabled) {
+      return res.status(503).json({ error: "texture generation disabled (no API key configured)" });
+    }
     console.error("[GET /api/texture] generation failed:", err);
     res.status(502).json({ error: "texture generation failed", detail: String(err.message || err) });
   }
@@ -119,29 +124,60 @@ app.get("/api/model", async (req, res) => {
   }
 });
 
+// The pre-generated games, for either renderer. Each says which renderers it has a world
+// for, so the 3D start screen only offers packs that can actually be walked around.
+app.get("/api/packs", async (_req, res) => {
+  try {
+    res.json({ packs: await listPacks() });
+  } catch (err) {
+    console.error("[GET /api/packs] failed:", err);
+    res.status(500).json({ error: "could not read the pack list" });
+  }
+});
+
 app.post("/api/sessions", async (req, res) => {
-  const { profile, sourceText, ablation } = req.body || {};
-  if (!sourceText || !sourceText.trim()) {
-    return res.status(400).json({ error: "sourceText is required" });
+  const { profile, sourceText, ablation, packId } = req.body || {};
+
+  let pack = null;
+  if (packId) {
+    try {
+      pack = await loadPack(String(packId));
+    } catch (err) {
+      console.error(`[3d] pack "${packId}" failed to load:`, err);
+      return res.status(500).json({ error: "that game is misconfigured", detail: String(err.message || err) });
+    }
+    if (!pack) return res.status(404).json({ error: `no such game: ${packId}` });
+    if (!pack.engines?.includes("3d")) {
+      return res.status(400).json({ error: `${pack.title} has no 3D world` });
+    }
   }
 
-  const session = createSession({ profile, sourceText, ablation });
+  const premise = pack ? pack.premise : sourceText;
+  if (!premise || !String(premise).trim()) {
+    return res.status(400).json({ error: "sourceText is required (or a packId)" });
+  }
+
+  const session = createSession({ profile, sourceText: String(premise), ablation, pack });
   const turnMessage = firstTurnMessage();
 
   try {
-    const { worldState, newHistory, usage, latencyMs, spatial } = await generateScene({
+    const { worldState, newHistory, usage, latencyMs, spatial, placeId, snapReport } = await generateScene({
       profile: session.profile,
       sourceText: session.sourceText,
       ablation: session.ablation,
       history: session.history,
       turnMessage,
       lastWorldState: session.lastWorldState,
+      pack: session.pack,
+      currentPlaceId: session.placeId,
+      turnIndex: session.turnIndex,
     });
 
     updateSession(session.id, {
       history: newHistory,
       lastWorldState: worldState,
       turnIndex: session.turnIndex + 1,
+      placeId: placeId ?? session.placeId,
     });
 
     await logGeneration({
@@ -155,6 +191,8 @@ app.post("/api/sessions", async (req, res) => {
       usage,
       latencyMs,
       spatial,
+      place: placeId ?? null,
+      snap: snapReport,
     });
 
     res.json(publicSession(getSession(session.id)));
@@ -192,13 +230,16 @@ app.post("/api/sessions/:id/choice", async (req, res) => {
   const turnMessage = choiceTurnMessage({ choiceText: choice?.text, freeText });
 
   try {
-    const { worldState, newHistory, usage, latencyMs, spatial } = await generateScene({
+    const { worldState, newHistory, usage, latencyMs, spatial, placeId, snapReport } = await generateScene({
       profile: session.profile,
       sourceText: session.sourceText,
       ablation: session.ablation,
       history: session.history,
       turnMessage,
       lastWorldState: session.lastWorldState,
+      pack: session.pack,
+      currentPlaceId: session.placeId,
+      turnIndex: session.turnIndex,
     });
 
     const turnIndex = session.turnIndex;
@@ -206,6 +247,7 @@ app.post("/api/sessions/:id/choice", async (req, res) => {
       history: newHistory,
       lastWorldState: worldState,
       turnIndex: turnIndex + 1,
+      placeId: placeId ?? session.placeId,
     });
 
     await logGeneration({
@@ -219,6 +261,8 @@ app.post("/api/sessions/:id/choice", async (req, res) => {
       usage,
       latencyMs,
       spatial,
+      place: placeId ?? null,
+      snap: snapReport,
     });
 
     res.json(publicSession(getSession(session.id)));

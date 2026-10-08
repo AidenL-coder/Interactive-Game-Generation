@@ -412,7 +412,14 @@
   flex: 1;
   min-width: 0;
   max-width: 700px;
-  max-height: 30vh;
+  /* 30vh held about nine lines, and a four-paragraph beat overflows it. Because the
+   * panel scrolls back to the top when a beat finishes, the overflow sat at the bottom
+   * edge as a line cut through the middle of its glyphs, with no scrollbar worth
+   * noticing and nothing to say there was more. A vision player and a judge
+   * independently reported the prose as "clipped mid-sentence" — no text was ever lost,
+   * but in the game whose main strength is its writing, looking truncated is the same
+   * defect as being truncated. */
+  max-height: min(42vh, 420px);
   overflow-y: auto;
   font-family: var(--serif);
   font-size: 1.04rem;
@@ -422,6 +429,13 @@
   pointer-events: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+/* Applied only while there is text below the fold, so the last visible line fades out
+   instead of ending in a hard horizontal cut. A fade reads as "keep scrolling"; a cut
+   reads as "the game lost your sentence". */
+.narrative-body.has-more {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 38px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 38px), transparent 100%);
 }
 .narrative-body p {
   margin: 0 0 0.72em;
@@ -588,6 +602,12 @@
   background: color-mix(in srgb, var(--game-accent) 22%, transparent);
   color: var(--game-accent);
   white-space: nowrap;
+  /* A backstop under shortName(): the label is already trimmed to a name, but nothing
+   * upstream knows the button's actual width, and an over-long pill used to push the
+   * choice text out of its own button rather than being cut. */
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .choice.ghost {
   border-left-color: transparent;
@@ -1016,6 +1036,79 @@
 .start2d input:focus {
   outline: none;
   border-color: var(--game-accent);
+}
+
+/* Pre-generated games. These sit above the premise box because for a first-time player
+   they are strictly the better door: no sixty-second wait on a cold cache, and the
+   writing is still generated per playthrough. */
+.start2d-packs {
+  margin: 0 0 30px;
+}
+.packs-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.packs-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--game-accent);
+}
+.packs-note {
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+.packs-3d {
+  margin-left: auto;
+  font-size: 0.76rem;
+  color: var(--game-accent);
+  text-decoration: none;
+}
+.packs-3d:hover {
+  text-decoration: underline;
+}
+.pack-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 15px 17px;
+  margin-bottom: 9px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: rgba(255, 255, 255, 0.025);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.pack-card:hover:not(:disabled) {
+  border-color: var(--game-accent);
+  background: rgba(255, 255, 255, 0.05);
+}
+.pack-card:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pack-title {
+  display: block;
+  font-size: 1.04rem;
+  margin-bottom: 4px;
+}
+.pack-blurb {
+  display: block;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  margin-bottom: 7px;
+}
+.pack-meta {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: rgba(255, 255, 255, 0.32);
 }
 
 .start2d-examples {

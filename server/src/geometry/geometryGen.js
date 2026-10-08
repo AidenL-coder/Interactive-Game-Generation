@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { PARTS_SCHEMA, validateParts } from "iwg-shared";
 import { anthropic, CLAUDE_MODEL } from "../anthropic.js";
+import { readPackAsset } from "../packs/packAssets.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR = path.join(__dirname, "..", "..", ".geometry-cache");
@@ -148,9 +149,29 @@ async function generate(description, form) {
  * Returns the parts array for an object description, generating on a cache miss.
  * Concurrent requests for the same description share one generation.
  */
+/**
+ * The filename an object's geometry is stored under, in the generated cache and in a
+ * pack's shipped assets alike. Keyed by description AND form: the same "brass wheel"
+ * built as a wide object and as a small one are different geometry.
+ */
+export function geometryFileName(description, form) {
+  return `${descriptionKey(description, form)}.json`;
+}
+
 export async function getGeometry(description, form) {
   const key = descriptionKey(description, form);
   const file = path.join(CACHE_DIR, `${key}.json`);
+
+  // A pack's shipped geometry first: it was built and checked before the game was handed
+  // to anyone, and reading it needs no API key.
+  const shipped = await readPackAsset("geometry", `${key}.json`);
+  if (shipped) {
+    try {
+      return JSON.parse(shipped.toString("utf8"));
+    } catch {
+      // A corrupt shipped file falls through to the cache rather than breaking the prop.
+    }
+  }
 
   try {
     return JSON.parse(await readFile(file, "utf8"));

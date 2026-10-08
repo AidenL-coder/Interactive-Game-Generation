@@ -1,4 +1,5 @@
 import { MIN_ACTORS, MAX_ACTORS, ANCHORS } from "iwg-shared/story2d";
+import { packBriefing, packStoryNotes } from "iwg-shared/pack";
 
 // System prompt for the 2D illustrated adventure. Two independent ablation flags are
 // read from session.ablation:
@@ -54,6 +55,8 @@ export function buildSystemPrompt2D({
   sourceText,
   ablation,
   bible,
+  pack,
+  currentPlaceId,
   lastState,
   prevStats,
   currentActors,
@@ -73,6 +76,19 @@ export function buildSystemPrompt2D({
     "Source material — this grounds the setting, genre and tone. Do not summarise it; " +
       `use it as the seed for an original playable scenario:\n"""\n${sourceText}\n"""`
   );
+
+  if (pack) {
+    // A pack game's scenery was painted in advance, so the vocabulary of places and
+    // objects is closed. The server enforces this afterwards by snapping every
+    // image-bearing string back to the manifest, which means disobeying here does not
+    // produce wrong artwork — it produces a scene that does not match the prose the
+    // model just wrote. Asking plainly is much cheaper than repairing that.
+    parts.push(packBriefing(pack));
+
+    // Stats, objective and route are shared with the 3D engine word for word — see
+    // packStoryNotes for why that matters to the engine comparison.
+    parts.push(...packStoryNotes(pack, { turnIndex, currentPlaceId }));
+  }
 
   // The art direction was decided before any of this and every picture in the game is
   // painted to it. Telling the writer what the game looks like keeps the prose and the

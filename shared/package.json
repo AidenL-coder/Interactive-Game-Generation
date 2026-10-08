@@ -6,6 +6,8 @@
   "main": "worldState.js",
   "exports": {
     ".": "./worldState.js",
-    "./story2d": "./story2d.js"
+    "./story2d": "./story2d.js",
+    "./pack": "./pack.js",
+    "./pack3d": "./pack3d.js"
   }
 }

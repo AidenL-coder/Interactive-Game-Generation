@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { fetchPacks } from "../api2d.js";
 
 // Four premises deliberately spread across genre, register and period, because the
 // thing worth showing off is that the art direction, the place and the mechanics come
@@ -40,21 +41,36 @@ export default function StartScreen2D({ onStart, busy, error }) {
   const [name, setName] = useState("");
   const [interests, setInterests] = useState("");
   const [sourceText, setSourceText] = useState("");
+  const [packs, setPacks] = useState([]);
+
+  useEffect(() => {
+    let live = true;
+    fetchPacks().then((list) => live && setPacks(list));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  function profileNow() {
+    return {
+      name: name.trim() || "the player",
+      interests: interests
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+  }
 
   function submit(e) {
     e?.preventDefault();
     const text = sourceText.trim();
     if (!text || busy) return;
-    onStart({
-      profile: {
-        name: name.trim() || "the player",
-        interests: interests
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-      },
-      sourceText: text,
-    });
+    onStart({ profile: profileNow(), sourceText: text });
+  }
+
+  function startPack(packId) {
+    if (busy) return;
+    onStart({ profile: profileNow(), packId });
   }
 
   return (
@@ -69,9 +85,41 @@ export default function StartScreen2D({ onStart, busy, error }) {
           </p>
         </header>
 
+        {packs.length > 0 && (
+          <section className="start2d-packs">
+            <div className="packs-head">
+              <span className="packs-label">Ready to play</span>
+              <span className="packs-note">
+                already painted — starts straight away, and the story is still written as you play
+              </span>
+              {packs.some((p) => p.engines?.includes("3d")) && (
+                <a className="packs-3d" href="?engine=3d">
+                  or walk it in 3D →
+                </a>
+              )}
+            </div>
+            {packs.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="pack-card"
+                data-pack-id={p.id}
+                disabled={busy}
+                onClick={() => startPack(p.id)}
+              >
+                <span className="pack-title">{p.title}</span>
+                <span className="pack-blurb">{p.blurb}</span>
+                <span className="pack-meta">
+                  {p.places} places · {p.cast} things to find · no wait
+                </span>
+              </button>
+            ))}
+          </section>
+        )}
+
         <form onSubmit={submit}>
           <label className="field">
-            <span>The story</span>
+            <span>{packs.length ? "Or make a new one from anything" : "The story"}</span>
             <textarea
               value={sourceText}
               onChange={(e) => setSourceText(e.target.value)}

@@ -1,4 +1,6 @@
 import { PROP_FORMS, GROUND_HALF_EXTENT } from "iwg-shared";
+import { packStoryNotes } from "iwg-shared/pack";
+import { packBriefing3d } from "iwg-shared/pack3d";
 
 // Two independent ablation flags, both read from session.ablation:
 //   personalization: whether the user profile is injected into the prompt at all
@@ -14,7 +16,16 @@ function profileBlock(profile) {
   return lines.join("\n");
 }
 
-export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldState, currentProps }) {
+export function buildSystemPrompt({
+  profile,
+  sourceText,
+  ablation,
+  lastWorldState,
+  currentProps,
+  pack = null,
+  currentPlaceId = null,
+  turnIndex,
+}) {
   const parts = [];
   const persistent = ablation?.persistence === "persistent";
   const toolName = persistent ? "emit_scene_delta" : "emit_scene";
@@ -29,6 +40,17 @@ export function buildSystemPrompt({ profile, sourceText, ablation, lastWorldStat
     "Source material (grounds the setting/genre/tone; do not just summarize it, use " +
       `it as inspiration for an original interactive scenario):\n"""\n${sourceText}\n"""`
   );
+
+  if (pack) {
+    // The world was built in advance, so its vocabulary is closed. The server enforces
+    // this afterwards by snapping every asset-bearing string back to the manifest, so
+    // disobeying here never produces a missing asset — it produces a world that does not
+    // match the prose the model just wrote. Asking plainly is cheaper than repairing it.
+    parts.push(packBriefing3d(pack));
+    // Stats, objective and route: identical text to the 2D engine, so the two
+    // renderings of this pack are told the same story rules in the same words.
+    parts.push(...packStoryNotes(pack, { turnIndex, currentPlaceId }));
+  }
 
   if (ablation?.personalization) {
     parts.push(

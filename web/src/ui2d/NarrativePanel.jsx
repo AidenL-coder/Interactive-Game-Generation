@@ -11,6 +11,7 @@ import { paragraphsOf } from "./prose.js";
 export default function NarrativePanel({ text, streaming, collapsed, onToggle, portrait }) {
   const bodyRef = useRef(null);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
 
   // Follow the text as it streams, but stop the moment the player scrolls up to re-read
   // something — yanking them back to the bottom mid-sentence is maddening.
@@ -30,11 +31,34 @@ export default function NarrativePanel({ text, streaming, collapsed, onToggle, p
     node.scrollTo({ top: 0, behavior: "smooth" });
   }, [streaming]);
 
+  // Whether anything is still below the fold. Drives the fade at the bottom edge: with
+  // the panel parked at the top of a long beat, a hard cut through a line of glyphs is
+  // indistinguishable from the game having truncated the sentence, and was read that way
+  // by both a vision player and a judge.
+  function measureOverflow() {
+    const node = bodyRef.current;
+    if (!node) return;
+    setHasMore(node.scrollHeight - node.scrollTop - node.clientHeight > 8);
+  }
+
+  useEffect(measureOverflow, [text, collapsed, streaming]);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const node = bodyRef.current;
+    if (!node) return;
+    // The panel is sized in vh, so the fold moves when the window does.
+    const ro = new ResizeObserver(measureOverflow);
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
+
   function handleScroll() {
     const node = bodyRef.current;
     if (!node) return;
     const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 24;
     setAutoScroll(atBottom);
+    measureOverflow();
   }
 
   if (!text) return null;
@@ -54,7 +78,11 @@ export default function NarrativePanel({ text, streaming, collapsed, onToggle, p
 
       <div className="narrative-inner">
         {portrait}
-        <div className="narrative-body" ref={bodyRef} onScroll={handleScroll}>
+        <div
+          className={`narrative-body${hasMore ? " has-more" : ""}`}
+          ref={bodyRef}
+          onScroll={handleScroll}
+        >
           {paragraphs.map((p, i) => (
             <p key={i}>
               {p}
