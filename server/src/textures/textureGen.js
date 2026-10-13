@@ -195,6 +195,23 @@ export function describedSkyPrompt(description, lightLevel) {
  *   generated from description rather than from a fixed set of presets.
  * @param {number} [args.lightLevel] - 0-1, used to pitch sky brightness.
  */
+// The image model refuses some requests as "recitation" — output that would too closely
+// reproduce something it was trained on. It is not about the words in the prompt: a
+// material texture of "cast iron", "frosted glass tube" or "rubber foot" is a stock
+// photograph almost by definition, so the most likely image IS a near-copy, and the
+// filter catches it. Twelve of a pack's material textures failed this way in one bake.
+// Re-asking with the same prompt mostly fails the same way; steering away from the stock
+// photograph — toward a specific, worn, one-off surface — gets through. The cache key is
+// unchanged, because the request is still for the same material.
+const RECITATION_NUDGES = [
+  "Make it a specific, individual surface with its own irregular wear, not a generic stock texture.",
+  "An original close-up with unusual, uneven detail and slight colour variation; avoid any standard reference image of this material.",
+];
+
+function isRecitationBlock(err) {
+  return /recitation|copyright/i.test(String(err?.message || err));
+}
+
 /**
  * The filename a texture is stored under, in the generated cache and in a pack's own
  * 3D assets alike. Exported so scripts/bake-pack.mjs files a pack's textures under
@@ -204,14 +221,129 @@ export function textureFileName({ kind = "ground", propType, label }) {
   return cacheKey(null, null, null, kind, propType, label);
 }
 
-export async function getTexture({ kind = "ground", propType, label, lightLevel = 0.7 }) {
+/**
+ * The prompt for one texture. With a `style` — a pack's art direction — the look each kind
+ * otherwise hardcodes (a photographed material, a photorealistic ground, a painterly
+ * matte-painted sky) is replaced by that direction, so a pack's 3D world is painted to the
+ * same brief as its 2D stage rather than to a stock-photo default.
+ */
+export function texturePrompt({ kind = "ground", propType, label, lightLevel = 0.7, style }) {
+  if (!style) {
+    return kind === "sky"
+      ? describedSkyPrompt(label, lightLevel)
+      : kind === "prop"
+        ? propPrompt(propType, label)
+        : kind === "sprite"
+          ? spritePrompt(propType, label)
+          : describedGroundPrompt(label, label);
+  }
+
+  const direction = `Art direction, followed exactly: ${sanitizeStyle(style)}`;
+  const what = sanitizeLabel(label);
+  if (kind === "sky") {
+    const brightness = lightLevel >= 0.75 ? "bright" : lightLevel >= 0.4 ? "dim" : "very dark";
+    return (
+      `${direction}\n\nWhat is overhead and in the upper distance, seen from inside ` +
+      `${what || "a vast hall"}, ${brightness}. Fills the entire frame. NO ground, NO floor, ` +
+      "NO horizon line, NO text — only what is overhead. Seamless 360-degree equirectangular " +
+      "panorama, wide 2:1 aspect ratio, drawn in the art direction above — not a photograph " +
+      "and not a painterly matte painting."
+    );
+  }
+  if (kind === "sprite") return `${direction}\n\n${spritePrompt(propType, label)}`;
+
+  if (kind === "prop") {
+    // An object's material is a SURFACE, and in a styled game it has one job: carry the
+    // surface's character while the object's own colour, chosen from the palette, does
+    // the rest. The renderer multiplies the two (the part's colour is pulled about halfway
+    // to white first), so a dark or saturated texture drowns that colour.
+    //
+    // The first styled bake asked only for the material "in the art direction above",
+    // and with this pack's brief — "labels and tiny arrows rendered as clean geometric
+    // glyphs" — the model drew busy navy illustrations covered in glyphs. Every object
+    // came out as the same dark speckled box, and a judge called the Keeper "an
+    // unreadable stack of blobs". A material is not a picture of anything.
+    return (
+      `${direction}\n\nA seamless, tileable SURFACE texture for one material on a 3D object: ` +
+      `${what || "rough grey stone"}. This is a surface, not an illustration. Render it in pale, ` +
+      "near-neutral tones — the object's own colour is applied separately on top, so this should " +
+      "carry only the material's character: faint grain, finish, a soft gradient or light wear, " +
+      "in the art direction's manner. Low contrast throughout. NO symbols, glyphs, icons, " +
+      "letters, labels, arrows, diagrams, patterns or repeating motifs — nothing that reads as a " +
+      "picture of something. Flat, evenly lit, seen straight on, filling the entire frame. No " +
+      "objects, no cast shadows, no edges or borders. Square 1:1 aspect ratio, edges must tile " +
+      "seamlessly."
+    );
+  }
+
+  return (
+    `${direction}\n\nA seamless, tileable floor texture: ${what || "a worn floor"}, drawn in the ` +
+    "art direction above — not a photograph. Flat, evenly lit, seen straight on, filling the " +
+    "entire frame. No objects, no cast shadows, no background, no text, no edges or borders. " +
+    "Square 1:1 aspect ratio, edges must tile seamlessly."
+  );
+}
+
+function sanitizeStyle(style) {
+  return String(style)
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[`\\{}<>]/g, "")
+    .trim()
+    .slice(0, 900);
+}
+
+/**
+ * Paints one texture and returns it, without touching any cache.
+ *
+ * The bake script calls this directly with a pack's style, because a styled texture must
+ * never land in the shared generated cache: that cache is keyed by label alone, so a
+ * navy technical-diagram "cast iron" stored there would be served to every other game
+ * that ever asks for cast iron.
+ *
+ * @returns {Promise<{buffer: Buffer, contentType: string}>}
+ */
+export async function generateTexture({ kind = "ground", propType, label, lightLevel = 0.7, style } = {}) {
+  if (!textureGenEnabled) throw new Error("texture generation disabled (no API key)");
+  const prompt = texturePrompt({ kind, propType, label, lightLevel, style });
+  const key = cacheKey(null, null, null, kind, propType, label);
+
+  let image;
+  let lastErr;
+  for (let attempt = 0; attempt < RECITATION_NUDGES.length + 1; attempt++) {
+    try {
+      const input = attempt === 0 ? prompt : `${prompt} ${RECITATION_NUDGES[attempt - 1]}`;
+      const interaction = await ai.interactions.create({ model: MODEL, input });
+      image = interaction.output_image;
+      if (image?.data) break;
+      lastErr = new Error(`image model returned no image for ${key}`);
+    } catch (err) {
+      lastErr = err;
+      // Only a recitation block is worth re-asking differently; anything else (a rate
+      // limit, a network fault) is the caller's to retry.
+      if (!isRecitationBlock(err)) throw err;
+      console.warn(`[textures] ${key} blocked as recitation; re-asking with a nudge (${attempt + 1})`);
+    }
+  }
+  if (!image?.data) throw lastErr;
+  const buffer = Buffer.from(image.data, "base64");
+  return { buffer, contentType: sniffImageType(buffer) };
+}
+
+/**
+ * Returns a texture: from the request's pack, then the shared cache, then a fresh
+ * unstyled generation that is cached.
+ *
+ * @param {object} args
+ * @param {string|null} [args.packId] - the pack this request belongs to. Only that pack's
+ *   shipped textures are searched — see server/src/packs/packAssets.js for why.
+ */
+export async function getTexture({ kind = "ground", propType, label, lightLevel = 0.7, packId = null }) {
   const key = cacheKey(null, null, null, kind, propType, label);
   const cachePath = path.join(CACHE_DIR, key);
 
-  // A pack's shipped textures come first and need no key at all. This check used to sit
-  // behind the "no API key" guard, which meant a machine without an image key could not
-  // even read a texture that was already on disk.
-  const shipped = await readPackAsset("textures", key);
+  // Shipped textures need no API key at all. This check used to sit behind the key
+  // guard, which meant a machine without one could not even read a file already on disk.
+  const shipped = await readPackAsset("textures", key, packId);
   if (shipped) return { buffer: shipped, contentType: sniffImageType(shipped), fromPack: true };
 
   try {
@@ -222,28 +354,11 @@ export async function getTexture({ kind = "ground", propType, label, lightLevel 
   }
 
   if (!textureGenEnabled) throw new Error("texture generation disabled (no API key)");
-
   if (inFlight.has(key)) return inFlight.get(key);
 
   const job = (async () => {
-    const prompt =
-      kind === "sky"
-        ? describedSkyPrompt(label, lightLevel)
-        : kind === "prop"
-          ? propPrompt(propType, label)
-          : kind === "sprite"
-            ? spritePrompt(propType, label)
-            : describedGroundPrompt(label, label);
-
     const startedAt = Date.now();
-    const interaction = await ai.interactions.create({ model: MODEL, input: prompt });
-    const image = interaction.output_image;
-    if (!image?.data) {
-      throw new Error(`image model returned no image for ${key}`);
-    }
-    const buffer = Buffer.from(image.data, "base64");
-    const contentType = sniffImageType(buffer);
-
+    const { buffer, contentType } = await generateTexture({ kind, propType, label, lightLevel });
     await mkdir(CACHE_DIR, { recursive: true });
     await writeFile(cachePath, buffer);
     console.log(

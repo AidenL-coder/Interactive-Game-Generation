@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { withPack, packKey, flatMaterials } from "./assetPack.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -11,11 +12,14 @@ const cache = new Map();
 export function materialTexture(description) {
   const key = String(description || "").trim().toLowerCase();
   if (!key) return Promise.resolve(null);
-  if (cache.has(key)) return cache.get(key);
+  // A flat-material pack draws each part in its palette colour; there is nothing to fetch.
+  if (flatMaterials()) return Promise.resolve(null);
+  const ck = packKey(key);
+  if (cache.has(ck)) return cache.get(ck);
 
   const job = (async () => {
     try {
-      const params = new URLSearchParams({ kind: "prop", label: key });
+      const params = withPack(new URLSearchParams({ kind: "prop", label: key }));
       const res = await fetch(`${API_BASE}/texture?${params}`);
       if (!res.ok) return null; // 503 = generation unavailable; parts keep flat colour
       const bitmap = await createImageBitmap(await res.blob());
@@ -31,7 +35,7 @@ export function materialTexture(description) {
     }
   })();
 
-  cache.set(key, job);
+  cache.set(ck, job);
   return job;
 }
 

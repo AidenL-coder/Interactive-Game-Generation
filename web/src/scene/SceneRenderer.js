@@ -6,15 +6,17 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { GROUND_HALF_EXTENT } from "iwg-shared";
+import { GROUND_HALF_EXTENT, FORM_HEIGHT } from "iwg-shared";
 import { paletteOf, lightingOf, fogOf, groundColorOf } from "./palette.js";
 import { applyPropTexture } from "./propTextures.js";
+import { facingQuaternion, stopDistanceFor } from "./facing.js";
 import { attachSprite } from "./propSprites.js";
 import { attachModel } from "./propModels.js";
 import { GEOMETRIC_FORMS, PASSABLE_FORMS, INTERACT_RADIUS } from "iwg-shared";
 import { attachGeometry } from "./propGeometry.js";
 import { buildScatter } from "./scatter.js";
 import { heightAt, seedFromScene } from "./terrain.js";
+import { withPack, packKey } from "./assetPack.js";
 
 const EYE_HEIGHT = 1.7;
 const MOVE_SPEED = 6; // units/sec
@@ -45,7 +47,8 @@ const API_BASE = import.meta.env.VITE_API_URL || "/api";
 const TURN_DURATION = 0.45;
 const INTERACT_DURATION = 0.6;
 const SAY_DURATION = 2.2;
-const STOP_DISTANCE = 2.2; // stop short of a target rather than inside it
+// Where a scripted walk stops is now sized to the target: see stopDistanceFor in
+// facing.js, and _stopDistance below.
 const PROP_TWEEN_DURATION = 0.6;
 
 const COLLISION_RADIUS = 0.9;
@@ -597,10 +600,49 @@ export class Scene3D {
   cancelPlayback() {
     if (this.playback) {
       const { resolve } = this.playback;
+      // Skip the animation, not the outcome. This used to stop dead wherever playback
+      // happened to be — halfway through a walk, or mid-turn — so pressing Skip left the
+      // player stranded somewhere the story never put them, often facing nothing. Now
+      // every remaining action is applied instantly to its end state. At the natural end
+      // of playback there is nothing left to apply, so this is a no-op there.
+      this._finishRemainingActions();
       this.playback = null;
       this.onSay?.(null);
       resolve?.();
     }
+  }
+
+  /** Applies the end state of the current and every queued action, without animating. */
+  _finishRemainingActions() {
+    const pb = this.playback;
+    if (!pb) return;
+    for (let i = pb.index; i < pb.queue.length; i++) {
+      const action = pb.queue[i];
+      if (action.type === "say" || action.type === "wait") continue;
+      const target = this._resolveTarget(action);
+      if (!target) continue;
+      const pos = this.camera.position;
+      if (action.type === "walk_to") {
+        const dir = new THREE.Vector3(target.x - pos.x, 0, target.z - pos.z);
+        const dist = Math.max(dir.length() - this._stopDistance(action), 0);
+        if (dist > 0) {
+          pos.add(dir.normalize().multiplyScalar(dist));
+          pos.y = heightAt(pos.x, pos.z, this._seed) + EYE_HEIGHT;
+        }
+      }
+      this.camera.quaternion.copy(facingQuaternion(pos, target));
+    }
+  }
+
+  /**
+   * How far from its target a scripted walk stops: further from tall things so they stay
+   * in frame, never beyond the reach that unlocks choices gated on them.
+   */
+  _stopDistance(action) {
+    const entry = action?.target_id ? this.propsById.get(action.target_id) : null;
+    if (!entry) return stopDistanceFor(0);
+    const { form, scale } = entry.prop;
+    return stopDistanceFor((FORM_HEIGHT[form] ?? 1.8) * (typeof scale === "number" ? scale : 1));
   }
 
   _resolveTarget(action) {
@@ -658,13 +700,12 @@ export class Scene3D {
       // Face the target first; only then translate.
       const dir = new THREE.Vector3(target.x - this.camera.position.x, 0, target.z - this.camera.position.z);
       pb.startQuat = this.camera.quaternion.clone();
-      const look = new THREE.Object3D();
-      look.position.copy(this.camera.position);
-      look.lookAt(target.x, EYE_HEIGHT, target.z);
-      pb.endQuat = look.quaternion.clone();
+      // Camera convention, via facing.js. This used to orient a plain Object3D and copy
+      // its rotation, which faces +Z — exactly away from the target.
+      pb.endQuat = facingQuaternion(this.camera.position, target);
       pb.from = this.camera.position.clone();
       // stop short so we don't end up standing inside the object
-      const dist = Math.max(dir.length() - STOP_DISTANCE, 0);
+      const dist = Math.max(dir.length() - this._stopDistance(action), 0);
       pb.to = pb.from.clone().add(dir.normalize().multiplyScalar(dist));
       pb.to.y = heightAt(pb.to.x, pb.to.z, this._seed) + EYE_HEIGHT;
       pb.phase = "turn";
@@ -705,11 +746,11 @@ export class Scene3D {
   // it reads convincingly as sky and distant horizon.
   async _loadGeneratedSky(scene) {
     const token = this._sceneToken;
-    const params = new URLSearchParams({
+    const params = withPack(new URLSearchParams({
       kind: "sky",
       label: scene.environment?.description || "an open sky",
       light_level: String(scene.environment?.light_level ?? 0.7),
-    });
+    }));
 
     try {
       const res = await fetch(`${API_BASE}/texture?${params}`);
@@ -740,11 +781,10 @@ export class Scene3D {
     // already advanced to the next scene is discarded rather than painted onto the
     // wrong world (or onto a material that's since been disposed).
     const token = this._sceneToken;
-    const params = new URLSearchParams({
+    const params = withPack(new URLSearchParams({
       kind: "ground",
       label: scene.environment?.ground_cover || "worn stone",
-      kind: "ground",
-    });
+    }));
 
     try {
       const res = await fetch(`${API_BASE}/texture?${params}`);

@@ -355,9 +355,10 @@ export const STORY_DELTA_TOOL = {
         type: "string",
         description:
           "ONLY in a game with a fixed set of pre-built places. The id of the place the " +
-          "player has moved to, if this beat moves them. Omit it when they stay put. " +
-          "Setting this swaps the whole backdrop and cast to that place, so use it " +
-          "exactly when the prose says they have walked into somewhere else.",
+          "player has ARRIVED in by the end of this beat. Set it only when this beat's prose " +
+          "ends with them standing there — not when a move is merely announced or offered — " +
+          "and then every choice this turn must belong to the new place. Setting this swaps " +
+          "the whole backdrop and cast. Omit it when they stay put.",
       },
       scene_delta: {
         type: "object",

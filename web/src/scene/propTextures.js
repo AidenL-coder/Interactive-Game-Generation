@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { withPack, packKey } from "./assetPack.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -23,11 +24,12 @@ export function propTexture(description) {
   // An empty description has nothing to generate from, and the endpoint rightly
   // rejects it — don't make the request at all.
   if (!description || !String(description).trim()) return Promise.resolve(null);
-  if (cache.has(description)) return cache.get(description);
+  const ck = packKey(description);
+  if (cache.has(ck)) return cache.get(ck);
 
   const job = (async () => {
     try {
-      const params = new URLSearchParams({ kind: "prop", label: description });
+      const params = withPack(new URLSearchParams({ kind: "prop", label: description }));
       const res = await fetch(`${API_BASE}/texture?${params}`);
       if (!res.ok) return null; // 503 = disabled, 502 = generation failed
       const bitmap = await createImageBitmap(await res.blob());
@@ -45,7 +47,7 @@ export function propTexture(description) {
     }
   })();
 
-  cache.set(description, job);
+  cache.set(ck, job);
   return job;
 }
 

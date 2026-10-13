@@ -3,7 +3,8 @@ import { shortName } from "../ui2d/labels.js";
 
 // Roughly how much prose fits in the collapsed panel before it's worth offering "more".
 // Below this the toggle would be noise, so it isn't shown at all.
-const COLLAPSE_THRESHOLD = 260;
+// Only genuinely long beats collapse; most fit in the six lines the clamp now allows.
+const COLLAPSE_THRESHOLD = 900;
 
 export default function ChoicePanel({ worldState, onChoose, busy, nearbyIds = [] }) {
   const [freeText, setFreeText] = useState("");

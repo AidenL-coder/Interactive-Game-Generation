@@ -12,6 +12,7 @@ import {
   repairPackRelocation3d,
   packBriefing3d,
   SKY_BRIEF_LIMIT,
+  materialMode,
 } from "./pack3d.js";
 import { MIN_PROPS } from "./worldState.js";
 
@@ -262,6 +263,34 @@ console.log("\n--- repairPackRelocation3d ---");
 }
 check("a turn that is not relocating is untouched", repairPackRelocation3d({ scene_delta: {} }, PACK).repaired === false);
 check("a relocation to nowhere is untouched", repairPackRelocation3d({ relocate_to: "atlantis" }, PACK).repaired === false);
+
+console.log("\n--- material mode ---");
+check("a pack without world3d is textured", materialMode(PACK) === "textured");
+check("a flat pack is flat", materialMode({ ...PACK, world3d: { materials: "flat" } }) === "flat");
+check("an unknown mode falls back to textured", materialMode({ world3d: { materials: "chrome" } }) === "textured");
+check("no pack is textured", materialMode(null) === "textured");
+{
+  const p = clone(PACK);
+  p.world3d = { materials: "chrome" };
+  check("an unknown mode is rejected by validation", validatePack3d(p).some((e) => e.includes("world3d.materials")));
+}
+{
+  const p = clone(PACK);
+  p.world3d = { materials: "flat" };
+  check("a flat pack validates", validatePack3d(p).length === 0, validatePack3d(p).join("; "));
+}
+
+console.log("\n--- the room's name reaches the status panel ---");
+{
+  const named = clone(PACK);
+  named.places[1].name = "The Vault";
+  const ws = { relocate_to: "vault", scene: { environment: { place: "yard" }, props: yardProps() } };
+  const { worldState: out } = snapToPack3d(ws, named, { currentPlaceId: "yard" });
+  // Without this the panel shows the sky brief: "A Vast Navy Industrial Hall Drawn Like…"
+  check("the environment carries the room's name", out.scene.environment.name === "The Vault");
+  const { turn } = repairPackRelocation3d({ relocate_to: "vault", scene_delta: {} }, named);
+  check("so does a repaired relocation", turn.scene.environment.name === "The Vault");
+}
 
 console.log("\n--- degenerate input ---");
 check("no scene is returned unchanged", snapToPack3d({ narrative: "x" }, PACK).worldState.narrative === "x");

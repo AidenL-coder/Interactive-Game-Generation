@@ -16,7 +16,7 @@
 // what it wanted, how engaged it was, and what it did. eval/enjoymentJudge.mjs scores
 // the screenshots; eval/rubric.mjs computes the counters. Those two stay independent on
 // purpose.
-import { chromium } from "playwright";
+import { launchBrowser } from "./browser.mjs";
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { PLAY_ACTION_TOOL, playerSystem, matchChoice } from "./rubric.mjs";
@@ -132,7 +132,7 @@ async function waitUntilPlayable(page) {
  *
  * @returns {Promise<object>} the validated tool input
  */
-async function decide({ anthropic, model, system, shotPath, memory, turnIndex }) {
+export async function decide({ anthropic, model, system, shotPath, memory, turnIndex, tool = PLAY_ACTION_TOOL }) {
   const b64 = (await readFile(shotPath)).toString("base64");
 
   const remembered = memory.length
@@ -164,10 +164,10 @@ async function decide({ anthropic, model, system, shotPath, memory, turnIndex })
           ],
         },
       ],
-      tools: [PLAY_ACTION_TOOL],
-      tool_choice: { type: "tool", name: PLAY_ACTION_TOOL.name },
+      tools: [tool],
+      tool_choice: { type: "tool", name: tool.name },
     });
-    const use = response.content.find((b) => b.type === "tool_use" && b.name === PLAY_ACTION_TOOL.name);
+    const use = response.content.find((b) => b.type === "tool_use" && b.name === tool.name);
     return { use, response };
   };
 
@@ -316,11 +316,10 @@ export async function playGame({
   const shotsDir = path.join(outDir, "shots");
   await mkdir(shotsDir, { recursive: true });
 
-  const browser = await chromium.launch({
-    headless: !headed,
-    // No GPU here; swiftshader renders the CSS filters and blend modes correctly.
-    args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"],
-  });
+  // The real GPU when there is one; see eval/browser.mjs for why that matters and why
+  // the renderer is recorded.
+  const { browser, renderer } = await launchBrowser({ headed });
+  log(`rendering on: ${renderer}`);
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 
   const problems = [];
@@ -521,6 +520,8 @@ export async function playGame({
     profile,
     model,
     maxTurns,
+    engine: "2d",
+    renderer,
     crashed: crashedWith ? String(crashedWith.message || crashedWith) : null,
     turns,
     problems: [...new Set(problems)],

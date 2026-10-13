@@ -15,6 +15,9 @@
     "protagonist": "a curious, ordinary person in a soft cream cable-knit sweater and round wire glasses, sleeves pushed up, holding a glowing cyan magnifying lens up to inspect streams of floating word-tokens — practical, student-like, no armor or fantasy trappings, just a notebook tucked under one arm",
     "negative": "no text, no watermarks, no photorealism, no lens flare, no 3d render, no painterly texture, no sketchy or hand-drawn wobble, no frames, no borders, no vignettes, no drop shadows implying a floating card, no orange-and-teal cinematic grading"
   },
+  "world3d": {
+    "materials": "flat"
+  },
   "targetTurns": 14,
   "objective": "Carry the sentence through all five stages of the Engine and see what word it predicts — before the sentence decays past reading.",
   "stats": [
@@ -296,7 +299,7 @@
           "scatter": "#e8a628"
         },
         "light_level": 0.72,
-        "visibility": 0.75,
+        "visibility": 0.25,
         "scatter_density": 0.18
       },
       "stage3d": {
@@ -356,7 +359,7 @@
           "scatter": "#28e0e8"
         },
         "light_level": 0.58,
-        "visibility": 0.62,
+        "visibility": 0.18,
         "scatter_density": 0.12
       },
       "stage3d": {
@@ -419,7 +422,7 @@
           "scatter": "#28e0e8"
         },
         "light_level": 0.62,
-        "visibility": 0.7,
+        "visibility": 0.22,
         "scatter_density": 0.08
       },
       "stage3d": {
@@ -485,7 +488,7 @@
           "scatter": "#28e0e8"
         },
         "light_level": 0.66,
-        "visibility": 0.66,
+        "visibility": 0.2,
         "scatter_density": 0.12
       },
       "stage3d": {
@@ -547,7 +550,7 @@
           "scatter": "#e04f4f"
         },
         "light_level": 0.52,
-        "visibility": 0.6,
+        "visibility": 0.18,
         "scatter_density": 0.08
       },
       "stage3d": {

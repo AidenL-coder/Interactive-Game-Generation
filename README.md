@@ -119,7 +119,7 @@ cp server/.env.example server/.env    # then fill in the keys below
 ```bash
 npm run dev:server   # http://localhost:3001
 npm run dev:web      # http://localhost:5173  (proxies /api -> :3001)
-npm test             # 374 dependency-free tests: the contracts, the compositor, the rubric
+npm test             # 565 dependency-free tests: the contracts, the compositor, the rubric
 ```
 
 ## Playing
@@ -156,10 +156,49 @@ For a live demo, run the premise once beforehand. The second run is immediate.
 
 ## Two renderers
 
-The 2D stage is the primary game. The first-person three.js renderer is still present and
-working (`web/src/scene/`, `shared/worldState.js`, the un-prefixed `/api/*` routes) as the
-other arm of the `engine` ablation: same narrative engine, same logging, same metrics,
-different presentation. `web/src/App.jsx` mounts the 2D game.
+The 2D stage is the primary game; `web/src/App.jsx` mounts it. The first-person three.js
+world (`web/src/scene/`, `shared/worldState.js`, the un-prefixed `/api/*` routes) is the
+other arm of the renderer comparison, mounted by `web/src/Game3D.jsx` — open
+**`http://localhost:5173/?engine=3d`**. WASD or ↑↓ walk, ← → turn, E acts on whatever is
+under the crosshair; the mouse still looks around once the canvas has the pointer, but
+nothing requires it.
+
+**One pack, both renderers.** `packs/attention-engine` carries a 3D world as well as its
+2D stage: the same five rooms, the same cast, the same stats and premise, built as
+walkable space. That is what makes the renderer comparison a controlled one. Until now
+the 2D and 3D arms could only be compared across two different premises generated two
+different ways, so any difference was confounded with everything else that differed;
+with a pack the story's rooms, people and stakes are fixed and the renderer is the only
+thing that changes. The 3D half adds `environment3d` and `stage3d` to each place and
+`form3d` to each cast member; the label stays shared, so the 2D painting and the 3D
+geometry are generated from the same description of each object. Sessions in both stores
+record `renderer: "2d" | "3d"` — the old `engine` field means different axes in the two
+stores and should not be filtered on.
+
+The 3D world is painted to the **same art direction** as the 2D stage. Its textures used
+to come from stock-photo defaults — the first look at the transformers pack in 3D was a
+photographic storm sky over what the brief calls a navy technical-diagram hall — and a
+comparison between an art-directed 2D game and an un-directed 3D one would have measured
+art direction as much as the renderer. The sky and ground are now painted to the brief,
+and geometry colours are chosen from its palette.
+
+Object *materials* are a per-pack choice, `world3d.materials: "textured" | "flat"`. This
+pack is flat: every part is its palette colour, lit by the scene, with no texture. That
+is not a shortcut — its brief says "no texture or hatching, interiors filled with flat
+color", and asking the image model for a material "in that style" produced busy diagram
+illustrations covered in glyphs, every object the same dark speckled box. A painterly
+pack would choose textured. Flat also took the pack's 3D assets from 105 MB to 7.8 MB.
+
+```bash
+node scripts/bake-pack.mjs attention-engine --3d --check   # would the 3D world make anyone wait?
+node scripts/bake-pack.mjs attention-engine --3d           # build whatever is missing
+node scripts/bake-pack.mjs attention-engine --3d --force   # rebuild it all, e.g. after a style change
+```
+
+3D asset requests name their pack (`?pack=<id>`) and the server searches only that
+pack's assets. An earlier version searched every pack by filename, which was harmless
+while pack textures were generic and a leak once they were styled: any other game asking
+for "cast iron" would have been handed this pack's navy diagram texture.
 
 ## Verifying changes
 
@@ -205,10 +244,33 @@ identical runs cannot support a claim about a one-point difference between condi
 
 ```bash
 node eval/play-and-judge.mjs --pack attention-engine   # score a pre-generated game
+node eval/play-and-judge.mjs --engine 3d --pack attention-engine   # …in first person
 node eval/play-and-judge.mjs --samples 3               # judge 3x, report the spread
 node eval/play-and-judge.mjs --judge-only eval/out/…   # re-score, no replay
 node eval/play-and-judge.mjs --headed                  # watch it play
+node eval/compare.mjs eval/out/run-a eval/out/run-b    # side by side, with spreads
 ```
+
+**The 3D judge** is the same instrument pointed at the other renderer. The player walks,
+strafes and turns with held keys, gets six free actions a turn instead of three because
+crossing a room takes several, and is told when it presses a choice that is locked until
+it stands near something — which is how it learns, as a person would, to walk there. The
+judge scores the same nine dimensions; the six non-visual anchors are word-for-word
+identical, and only the three visual ones are rewritten, because a 3D world fails
+differently (untextured shapes, clipping, empty floor) from a painted stage. The 2D
+instrument is byte-for-byte unchanged by the 3D one existing, which is checked rather
+than assumed.
+
+**Runs use the real GPU, and say so.** This machine has one, reachable from headless
+Chromium through ANGLE/D3D11, but the harnesses used to force SwiftShader on a comment's
+claim that there was none. For the 2D stage that cost only speed. For the 3D world it was
+disqualifying: 1.6 fps in software against 60 on the GPU, and because movement clamps
+each frame's step, a player holding a key for a second under SwiftShader moved about a
+sixth as far as it should. `eval/browser.mjs` prefers the GPU, falls back to software, and
+records the renderer in every play log, because scores taken under the two are not
+comparable. (`scripts/motion-probe.mjs` and `scripts/playthrough.mjs` still run in
+software, so the frame-rate figures quoted above are SwiftShader numbers: valid as a
+before/after comparison, not as a statement about real hardware.)
 
 It found four real defects on its first run against a working game, including one — the
 narrative column cutting a sentence in half at the bottom of the frame — that every

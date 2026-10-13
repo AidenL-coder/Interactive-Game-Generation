@@ -103,7 +103,7 @@ function descriptionKey(description, form) {
 const inFlight = new Map();
 const MAX_ATTEMPTS = 2;
 
-async function generate(description, form) {
+async function generate(description, form, style) {
   let lastViolations = [];
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -116,7 +116,16 @@ async function generate(description, form) {
           role: "user",
           content:
             `Build this object: ${sanitize(description)}` +
-            (form ? `\n\nIt is roughly "${form}" in proportion.` : ""),
+            (form ? `\n\nIt is roughly "${form}" in proportion.` : "") +
+            // A part's colour multiplies its texture (pulled about halfway to white once
+            // the texture loads), so free colour choices tint even a perfectly
+            // art-directed texture off-palette. For a pack, colours and materials are
+            // chosen against the pack's own art direction instead.
+            (style
+              ? `\n\nThis object belongs to a game with a fixed art direction: ${String(style).slice(0, 900)}\n` +
+                "Choose every part's colour from that palette, and name materials that suit " +
+                "that look rather than real-world photographic surfaces."
+              : ""),
         },
       ],
       tools: [GEOMETRY_TOOL],
@@ -150,6 +159,16 @@ async function generate(description, form) {
  * Concurrent requests for the same description share one generation.
  */
 /**
+ * Builds one object's parts without touching any cache. The bake script calls this with
+ * a pack's art direction; styled geometry must not enter the shared cache, which is keyed
+ * by description alone and would hand this pack's palette to every other game.
+ */
+export async function generateGeometry(description, form, { style } = {}) {
+  if (!geometryGenEnabled) throw new Error("geometry generation disabled (no API key)");
+  return generate(description, form, style);
+}
+
+/**
  * The filename an object's geometry is stored under, in the generated cache and in a
  * pack's shipped assets alike. Keyed by description AND form: the same "brass wheel"
  * built as a wide object and as a small one are different geometry.
@@ -158,13 +177,13 @@ export function geometryFileName(description, form) {
   return `${descriptionKey(description, form)}.json`;
 }
 
-export async function getGeometry(description, form) {
+export async function getGeometry(description, form, { packId = null } = {}) {
   const key = descriptionKey(description, form);
   const file = path.join(CACHE_DIR, `${key}.json`);
 
-  // A pack's shipped geometry first: it was built and checked before the game was handed
-  // to anyone, and reading it needs no API key.
-  const shipped = await readPackAsset("geometry", `${key}.json`);
+  // The request's pack first, and only its pack: its geometry was built and checked
+  // before the game was handed to anyone, and reading it needs no API key.
+  const shipped = await readPackAsset("geometry", `${key}.json`, packId);
   if (shipped) {
     try {
       return JSON.parse(shipped.toString("utf8"));

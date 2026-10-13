@@ -485,7 +485,10 @@ export const WORLD_STATE_DELTA_TOOL = {
         type: "string",
         description:
           "ONLY in a game with a fixed set of pre-built places. The id of the place the " +
-          "player has moved to, if this beat moves them. Omit it when they stay put.",
+          "player has ARRIVED in by the end of this beat. Set it only when this beat's prose " +
+          "ends with them standing there — not when a move is merely announced or offered — " +
+          "and then every choice this turn must belong to the new place. Omit it when they " +
+          "stay put.",
       },
       scene_delta: {
         type: "object",

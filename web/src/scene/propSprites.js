@@ -8,6 +8,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "/api";
 // fixed set of types any more; FORM_HEIGHT lives in the shared schema so the renderer
 // and the model agree on what "tall" means.
 import { FORM_HEIGHT } from "iwg-shared";
+import { withPack, packKey } from "./assetPack.js";
 
 const cache = new Map();
 
@@ -106,12 +107,12 @@ export function propSprite(type, label) {
   // the same handful of objects. The model names each prop specifically, so that
   // description is what the art comes from.
   if (!label || !String(label).trim()) return Promise.resolve(null);
-  const key = `${type}::${label}`;
+  const key = packKey(`${type}::${label}`);
   if (cache.has(key)) return cache.get(key);
 
   const job = (async () => {
     try {
-      const params = new URLSearchParams({ kind: "sprite", type });
+      const params = withPack(new URLSearchParams({ kind: "sprite", type }));
       if (label) params.set("label", label);
       const res = await fetch(`${API_BASE}/texture?${params}`);
       if (!res.ok) return null;

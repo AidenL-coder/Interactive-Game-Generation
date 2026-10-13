@@ -47,8 +47,11 @@ async function main() {
 
   const browser = await chromium.launch({
     headless: !flag("headed"),
-    // Software rendering: there is no GPU in this environment and the default
-    // swiftshader path renders CSS filters and blend modes correctly.
+    // Software rendering. This comment used to say "there is no GPU in this environment",
+    // which was never true — the machine has an AMD Radeon Pro 580 and headless Chromium
+    // reaches it through ANGLE/D3D11 (see eval/browser.mjs). SwiftShader is kept here
+    // because this harness only needs correct stills of the DOM stage, which it renders
+    // faithfully; anything measuring motion or playing the 3D world must use the GPU.
     args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"],
   });
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });

@@ -78,6 +78,26 @@ function repairAgentActions(turn, knownIds) {
   return { turn: { ...turn, agent_actions: kept }, repaired };
 }
 
+// The same salvage for choices: a choice gated on a prop that is not in the scene can never
+// be taken, so the gate is lifted and the choice kept. The 2D engine has had this repair
+// for a long time; the 3D one did not, and a turn whose only fault was "go to the archway"
+// pointing at the previous room's archway was thrown away on both attempts — which put a
+// raw "world generation failed" error in front of the player.
+export function repairChoiceGates(turn, knownIds) {
+  if (!Array.isArray(turn?.choices)) return { turn, repaired: 0 };
+  const known = new Set(knownIds);
+  let repaired = 0;
+  const choices = turn.choices.map((c) => {
+    if (c?.requires_near && !known.has(c.requires_near)) {
+      repaired++;
+      const { requires_near: _dropped, ...rest } = c;
+      return rest;
+    }
+    return c;
+  });
+  return repaired ? { turn: { ...turn, choices }, repaired } : { turn, repaired: 0 };
+}
+
 // The schema advertises state_updates as "merged into the running world state", but
 // nothing merged it: each turn simply replaced the last, so any stat the model didn't
 // restate that turn silently vanished from the player's status panel. Carry it forward.
@@ -264,6 +284,9 @@ export async function generateScene({
 
     // Salvage an otherwise-good turn whose only fault is unplayable action targets.
     let candidate = rawCandidate;
+    // Set when a repair was tried and still failed: what was left is the real diagnosis.
+    // The raw violations only say what the repair was attempting.
+    let afterRepair = null;
 
     // A pack relocation first, because it is the one "invalid" turn that is actually
     // correct: the model empties the room to walk out of it and does not re-list the
@@ -279,20 +302,32 @@ export async function generateScene({
           console.warn(`[generateScene] pack: built ${reloc.placeId} from the manifest for the move`);
           candidate = reloc.turn;
           check = recheck;
+        } else {
+          console.warn(`[generateScene] relocation repair still left: ${recheck.violations.join("; ")}`);
+          afterRepair = recheck.violations;
         }
       }
     }
 
     if (!check.valid) {
-      const { turn: fixed, repaired } = repairAgentActions(
-        rawCandidate,
-        propIdsAfter(rawCandidate, currentProps)
-      );
-      if (repaired) {
-        const recheck = validate(fixed);
+      // Both kinds of dangling reference together: a turn that points one action and one
+      // choice at an object no longer in the scene is one fault, not two, and repairing
+      // only half of it still fails the recheck.
+      const ids = propIdsAfter(candidate, currentProps);
+      const actions = repairAgentActions(candidate, ids);
+      const gates = repairChoiceGates(actions.turn, ids);
+      if (actions.repaired || gates.repaired) {
+        const recheck = validate(gates.turn);
+        if (!recheck.valid) {
+          console.warn(`[generateScene] repair still left: ${recheck.violations.join("; ")}`);
+          afterRepair = recheck.violations;
+        }
         if (recheck.valid) {
-          console.warn(`[generateScene] repaired ${repaired} dangling agent action(s)`);
-          candidate = fixed;
+          console.warn(
+            `[generateScene] repaired ${actions.repaired} dangling agent action(s), ` +
+              `${gates.repaired} dangling choice gate(s)`
+          );
+          candidate = gates.turn;
           check = recheck;
         }
       }
@@ -334,7 +369,7 @@ export async function generateScene({
       }
       break;
     }
-    lastViolations = check.violations;
+    lastViolations = afterRepair ? afterRepair.map((v) => `after repair: ${v}`) : check.violations;
     // "scene missing" describes a symptom, not a cause. Dump the shape of what actually
     // came back so the real fault is visible instead of inferred.
     console.warn(

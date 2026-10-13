@@ -418,17 +418,26 @@ export function repairPackRelocation(turn, pack, currentActors = []) {
   if (!arriving.length) return { turn, repaired: false, placeId: null };
 
   const keep = new Set(target.cast || []);
-  const leaving = (currentActors || []).map((a) => a.id).filter((id) => !keep.has(id));
+  const onStage = new Set((currentActors || []).map((a) => a.id));
+  const leaving = [...onStage].filter((id) => !keep.has(id));
 
   const delta = turn.scene_delta || {};
   const alreadyAdded = new Set((delta.add || []).map((a) => a.id));
+
+  // Someone who is in both rooms — the Keeper is in all five — is already on stage and
+  // stays there, so they must not be added again. This used to re-add them, which the
+  // contract rejects as a duplicate id: every move that needed this repair therefore
+  // still failed validation, and after three attempts the player was shown a raw
+  // "invalid delta" error. A test that checked who was removed, but never ran the real
+  // validator on the result, let it through.
+  const toAdd = arriving.filter((a) => !alreadyAdded.has(a.id) && !onStage.has(a.id));
 
   return {
     turn: {
       ...turn,
       scene_delta: {
         ...delta,
-        add: [...(delta.add || []), ...arriving.filter((a) => !alreadyAdded.has(a.id)).map((a) => ({ ...a }))],
+        add: [...(delta.add || []), ...toAdd.map((a) => ({ ...a }))],
         remove: [...new Set([...(delta.remove || []), ...leaving])],
       },
     },
@@ -436,6 +445,30 @@ export function repairPackRelocation(turn, pack, currentActors = []) {
     placeId: target.id,
   };
 }
+
+/**
+ * How and when to move between a pack's places — shared word for word by the 2D and 3D
+ * briefings. It has now gone wrong in both directions, and the rule has to rule out both:
+ *
+ *   too late  — the prose walked into the next room but the turn did not say so; the
+ *               scenery stayed in the first room for an entire playthrough.
+ *   too early — the turn moved the moment the prose *announced* the move ("she beckons you
+ *               through"), so the player stood in the new room while the next choices
+ *               were still "follow her in" and "glance back at the sentence one last
+ *               time". Those choices pointed at the previous room's objects, failed
+ *               validation, and put a raw error on screen.
+ */
+export const RELOCATION_RULES =
+  "MOVING BETWEEN PLACES — the one thing it is easiest to get wrong, in either direction. " +
+  "Set `relocate_to` on the beat in which the player ARRIVES: this beat's prose ends with " +
+  "them already standing in the new place. Writing the move only in the prose changes " +
+  "nothing, because the scene on screen carries forward. But do not move them early: if " +
+  "this beat ends at the threshold — the Keeper beckoning, a door opening — do NOT set " +
+  "`relocate_to`; offer going through as one of the choices, and move them on the beat that " +
+  "follows. Whichever room the player stands in at the END of this beat is the only room " +
+  "this turn may refer to: every choice, every `requires_near`, every action or beat names " +
+  "only that room's objects and people. Never offer \"follow her into the hall\" to someone " +
+  "already in the hall, and never point a choice at an object in a room they have left.";
 
 /**
  * The engine-neutral half of a pack's prompt: its fixed stats, its objective, and where
@@ -524,7 +557,7 @@ export function packBriefing(pack) {
   lines.push("");
   lines.push("Set `scene.backdrop.place` to the id of the place the scene is in, and copy that place's `description`, `mood`, `horizon` and `palette` into the backdrop exactly as given. Use ONLY the actor ids listed for that place, with their labels exactly as given. You may move them: x, depth, scale and facing are yours to stage. You may not invent a place, an actor, or a new description — there is no artwork for anything that is not on this list, and inventing one puts a blank shape on screen.");
   lines.push("");
-  lines.push("MOVING BETWEEN PLACES — the one thing it is easiest to get wrong. When the player walks into a different place you MUST say so in the turn itself, by setting `relocate_to` to the new place's id (on a `emit_scene_delta` turn) or by emitting a full `scene` with that place's backdrop. Writing it only in the prose changes nothing: the painting on screen carries forward from the previous turn, and the player reads about the Attention Hall while still standing in the first room. A whole playthrough has already been lost this way. If the prose says they have moved, the turn must move them.");
+  lines.push(RELOCATION_RULES);
   lines.push("");
   for (const p of pack.places || []) {
     lines.push(`PLACE ${p.id} — ${p.name}`);

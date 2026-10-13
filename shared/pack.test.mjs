@@ -13,6 +13,7 @@ import {
   PLACE_MATCH_THRESHOLD,
   PACK_VERSION,
 } from "./pack.js";
+import { validateStoryDelta } from "./story2d.js";
 
 let pass = 0,
   fail = 0;
@@ -346,13 +347,59 @@ console.log("\n--- repairPackRelocation ---");
 
   check("it reports the move", repaired === true && placeId === "vault");
   const added = fixed.scene_delta.add.map((a) => a.id).sort();
-  check("the new room's cast is added", added.join() === "keeper,lamp", added.join());
+  // Only the lamp: the Keeper is already standing there and walks through with the player.
+  check("the new room's cast is added", added.join() === "lamp", added.join());
   check("added actors carry their pinned labels", fixed.scene_delta.add.every((a) => a.label));
   check("added actors carry their staged positions", fixed.scene_delta.add.every((a) => typeof a.x === "number"));
   check("the old room's fixtures are removed", fixed.scene_delta.remove.includes("wheel"));
   // The Keeper is in both rooms and travels with the player; she must not be removed
   // and re-added, which would make her pop.
   check("an actor in both rooms is not removed", !fixed.scene_delta.remove.includes("keeper"));
+  check("an actor in both rooms is not re-added either", !fixed.scene_delta.add.some((a) => a.id === "keeper"));
+}
+{
+  // The test that should have existed from the start: run the real contract validator on
+  // the repaired turn. Without it, a repair that re-added the Keeper — present in every
+  // room — produced a duplicate id that the validator rejected, and two whole turns of a
+  // judged playthrough failed with a raw error on screen.
+  // Against the real transformers pack, whose rooms are full-sized: the test fixture's
+  // vault is too small to meet the contract's actor minimum at all.
+  const { readFileSync } = await import("node:fs");
+  const real = JSON.parse(readFileSync(new URL("../packs/attention-engine/pack.json", import.meta.url), "utf8"));
+  const from = real.places[0];
+  const to = real.places[1];
+  const current = from.cast.map((id) => ({ id }));
+  const raw = {
+    narrative: "You follow her through the archway into a cooler vault lined with brass drawers.",
+    relocate_to: to.id,
+    scene_delta: {},
+    choices: [
+      { id: "c1", text: "Look closer", requires_near: to.cast.find((id) => id !== "keeper_01") },
+      { id: "c2", text: "Ask her what this place is for" },
+    ],
+    objective: "Get through the machine.",
+    progress: 0.3,
+  };
+  const { turn: fixed } = repairPackRelocation(raw, real, current);
+  const v = validateStoryDelta(fixed, current.map((a) => a.id));
+  check(`a repaired move ${from.id} → ${to.id} passes the real contract validator`, v.valid, v.violations?.join(" | "));
+
+  // And every other move the route can make, since the Keeper is in all of them.
+  let allValid = true;
+  const failures = [];
+  for (let i = 0; i < real.places.length; i++) {
+    for (let j = 0; j < real.places.length; j++) {
+      if (i === j) continue;
+      const cur = real.places[i].cast.map((id) => ({ id }));
+      const { turn: t } = repairPackRelocation({ ...raw, relocate_to: real.places[j].id, choices: [{ id: "c", text: "Go on" }] }, real, cur);
+      const r = validateStoryDelta(t, cur.map((a) => a.id));
+      if (!r.valid) {
+        allValid = false;
+        failures.push(`${real.places[i].id}→${real.places[j].id}: ${r.violations[0]}`);
+      }
+    }
+  }
+  check("every room-to-room move in the real pack repairs to a valid turn", allValid, failures.slice(0, 2).join(" | "));
 }
 {
   const turn = { relocate_to: "vault", scene_delta: { add: [{ id: "lamp", label: "x", x: 0.2, depth: 0.5 }] } };

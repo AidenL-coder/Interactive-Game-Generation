@@ -352,7 +352,8 @@ export const DIMENSIONS = [
   },
 ];
 
-export const VERDICT_TOOL = {
+function buildVerdictTool(dims) {
+  return {
   name: "emit_enjoyment_verdict",
   description:
     "Score a playthrough of an illustrated adventure game on how much a player would " +
@@ -387,7 +388,7 @@ export const VERDICT_TOOL = {
       // is declared immediately before its score so the evidence is still written
       // first, which is the point of having it.
       ...Object.fromEntries(
-        DIMENSIONS.flatMap((d) => [
+        dims.flatMap((d) => [
           [
             `${d.key}_evidence`,
             {
@@ -444,7 +445,7 @@ export const VERDICT_TOOL = {
     },
     required: [
       "what_i_saw",
-      ...DIMENSIONS.flatMap((d) => [`${d.key}_evidence`, d.key]),
+      ...dims.flatMap((d) => [`${d.key}_evidence`, d.key]),
       "best_moment",
       "biggest_problem",
       "minutes_before_quitting",
@@ -452,14 +453,56 @@ export const VERDICT_TOOL = {
       "would_recommend",
     ],
   },
-};
+  };
+}
+
+export const VERDICT_TOOL = buildVerdictTool(DIMENSIONS);
+
+/** The verdict tool for a renderer: same keys, renderer-appropriate visual anchors. */
+export function verdictToolFor(engine = "2d") {
+  return engine === "3d" ? buildVerdictTool(dimensionsFor("3d")) : VERDICT_TOOL;
+}
 
 /**
  * The judge's system prompt, with the rubric rendered from DIMENSIONS so the anchors the
  * judge is held to and the anchors documented in this file cannot drift apart.
  */
-export function judgeSystem() {
-  const rubric = DIMENSIONS.map(
+// The three visual dimensions, re-anchored for a first-person 3D world.
+//
+// The question each one asks is unchanged, and so are the six non-visual dimensions,
+// word for word — that is what lets a 2D and a 3D playthrough of the same pack be scored
+// on the same axes. What changes is the examples of failure in the anchors, because a 3D
+// world fails differently: there are no cut-outs to fringe, but there are untextured
+// primitives, objects clipping through each other, and rooms that are mostly empty floor.
+// Anchoring a 3D judge on "pale fringes around cut-out figures" would have it hunting for
+// a defect that cannot occur, and missing the ones that do.
+const VISUAL_ANCHORS_3D = {
+  visual_coherence: {
+    1: "Clearly unrelated looks jammed together — photographic textures beside flat colour, a detailed object beside a toy-like stack of primitives.",
+    3: "Broadly consistent, with obvious offenders: an object whose materials or colours clash with the room around it.",
+    5: "One authored look throughout. Lighting, materials and palette agree, and you would believe one artist built the whole place.",
+  },
+  visual_craft: {
+    1: "Broken: objects that are bare grey shapes or unreadable blobs, floating above the floor or sunk into it, clipping through each other, or missing.",
+    3: "Clean and correct but plain — objects are recognisable yet crude, and the space is mostly empty floor.",
+    5: "Genuinely attractive. Objects read clearly as what they are, and the place has depth, light and atmosphere.",
+  },
+  legibility: {
+    1: "You cannot tell where you are, what anything is, or how to move and act.",
+    3: "Readable with effort — some objects unidentifiable, some text cramped, or unclear what can be acted on and where to go.",
+    5: "Immediately clear: where you are, what the objects are, what you can do, and where to go next.",
+  },
+};
+
+/** The rubric for a renderer. 2D is the canonical DIMENSIONS, untouched. */
+export function dimensionsFor(engine = "2d") {
+  if (engine !== "3d") return DIMENSIONS;
+  return DIMENSIONS.map((d) => (VISUAL_ANCHORS_3D[d.key] ? { ...d, anchors: VISUAL_ANCHORS_3D[d.key] } : d));
+}
+
+export function judgeSystem(engine = "2d") {
+  const is3d = engine === "3d";
+  const rubric = dimensionsFor(engine).map(
     (d) =>
       `${d.key} — ${d.question}\n` +
       `    1: ${d.anchors[1]}\n` +
@@ -467,7 +510,7 @@ export function judgeSystem() {
       `    5: ${d.anchors[5]}`
   ).join("\n\n");
 
-  return `You are evaluating an AI-generated illustrated adventure game by looking at
+  return `You are evaluating an AI-generated ${is3d ? "first-person 3D" : "illustrated"} adventure game by looking at
 screenshots of someone playing it. You see what the player saw, in order, and nothing
 else: no source code, no internal state, no generation logs. Judge the game as a player
 would experience it.
@@ -491,10 +534,20 @@ that the view was partial. Do not infer quality from the premise being interesti
 the prose sounding confident, or from the game appearing to work — a game can be
 flawless and dull, and dull is the failure this report exists to catch.
 
-Look hard at the pictures, not only the text in them. Cut-out figures with pale fringes
+${
+    is3d
+      ? `Look hard at the pictures, not only the text in them. Objects that are bare untextured
+shapes, objects floating above the floor or sunk into it, things clipping through one
+another, a room that is mostly empty floor, a view the player cannot orient themselves
+in — these are the defects a player notices first and a text transcript cannot show.
+Several frames may show the player still walking or turning: that is how a 3D game is
+played, and it is not by itself a fault — but a player who spends many frames unable to
+find what the game is asking them to reach is a real legibility problem.`
+      : `Look hard at the pictures, not only the text in them. Cut-out figures with pale fringes
 or hard rectangular edges, figures whose feet do not meet the ground, a character
 rendered in a different style from the scene behind them, a blank shape where art failed
-— these are the defects a player notices first and a text transcript cannot show.`;
+— these are the defects a player notices first and a text transcript cannot show.`
+  }`;
 }
 
 /**

@@ -4,6 +4,7 @@ import { materialTexture, materialsIn } from "./materialTextures.js";
 import { propTexture } from "./propTextures.js";
 import { propModel } from "./propModels.js";
 import { GEOMETRIC_FORMS, FORM_HEIGHT } from "iwg-shared";
+import { withPack, packKey } from "./assetPack.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -16,19 +17,19 @@ const API_BASE = import.meta.env.VITE_API_URL || "/api";
 // generated here is generated twice.
 
 function warmSky(env) {
-  const params = new URLSearchParams({
+  const params = withPack(new URLSearchParams({
     kind: "sky",
     label: env?.description || "an open sky",
     light_level: String(env?.light_level ?? 0.7),
-  });
+  }));
   return fetch(`${API_BASE}/texture?${params}`).catch(() => null);
 }
 
 function warmGround(env) {
-  const params = new URLSearchParams({
+  const params = withPack(new URLSearchParams({
     kind: "ground",
     label: env?.ground_cover || "worn stone",
-  });
+  }));
   return fetch(`${API_BASE}/texture?${params}`).catch(() => null);
 }
 

@@ -21,12 +21,14 @@
 //   node eval/play-and-judge.mjs --samples 3                 # judge 3x, report the spread
 //   node eval/play-and-judge.mjs --judge-only eval/out/play-… # re-score, no replay
 //   node eval/play-and-judge.mjs --headed                    # watch it play
+//   node eval/play-and-judge.mjs --engine 3d --pack attention-engine   # the 3D world
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import Anthropic from "@anthropic-ai/sdk";
 import { playGame } from "./visionPlayer.mjs";
+import { playGame3d } from "./visionPlayer3d.mjs";
 import { judgePlaythrough, formatReport } from "./enjoymentJudge.mjs";
 import { playMetrics } from "./rubric.mjs";
 
@@ -40,6 +42,9 @@ const arg = (name, fallback) => {
   return i === -1 ? fallback : args[i + 1];
 };
 const flag = (name) => args.includes(`--${name}`);
+
+// Which renderer to play: the 2D stage (default) or the first-person 3D world.
+const ENGINE = arg("engine", "2d") === "3d" ? "3d" : "2d";
 
 const DEFAULT_PREMISE =
   "A diving bell sits on the deck of a rusting salvage barge in the North Sea. Below it " +
@@ -85,11 +90,14 @@ async function main() {
     outDir = path.resolve(arg("out", path.join(__dirname, "out", `play-${stamp}`)));
     await mkdir(outDir, { recursive: true });
 
-    console.log(`player: ${PLAYER_MODEL}   judge: ${JUDGE_MODEL}`);
+    console.log(`player: ${PLAYER_MODEL}   judge: ${JUDGE_MODEL}   renderer: ${ENGINE}`);
     console.log(packId ? `pack: ${packId}` : `premise: ${premise.slice(0, 90)}…`);
     console.log(`out: ${outDir}\n`);
 
-    playLog = await playGame({
+    // The same play log comes back from either player, so everything below — the judge,
+    // the counters, the report — reads a 2D and a 3D playthrough identically.
+    const play = ENGINE === "3d" ? playGame3d : playGame;
+    playLog = await play({
       anthropic,
       model: PLAYER_MODEL,
       baseUrl: arg("url", "http://localhost:5173"),
@@ -125,6 +133,19 @@ async function main() {
   });
 
   console.log(formatReport(summary, metrics));
+
+  // First person adds its own counters: how much walking it took, how often a choice was
+  // out of reach, and how many places the player actually got to.
+  if (playLog.engine === "3d" && playLog.counts3d) {
+    const c = playLog.counts3d;
+    console.log("\n=== the 3D world, measured ===\n");
+    console.log(`  movement actions        ${c.moves} (${(c.moves / Math.max(playLog.turns.length, 1)).toFixed(1)} per turn)`);
+    console.log(`  pressed a locked choice ${c.lockedAttempts} time(s)`);
+    console.log(`  turns opening with every choice locked  ${c.turnsAllLocked}`);
+    console.log(`  E on an object          ${c.interactions} turn(s)${c.emptyInteracts ? `, ${c.emptyInteracts} press(es) on nothing` : ""}`);
+    console.log(`  places visited          ${playLog.placesVisited?.length ?? "?"}: ${(playLog.placesVisited || []).join(" → ")}`);
+  }
+  console.log(`\nrendered on: ${playLog.renderer || "unrecorded (a run from before the renderer was logged)"}`);
 
   if (playLog.problems?.length) {
     console.log("\n=== faults the harness saw while playing ===\n");

@@ -14,6 +14,11 @@ import {
   MATCH_THRESHOLD,
   DIMENSIONS,
   VERDICT_TOOL,
+  dimensionsFor,
+  verdictToolFor,
+  judgeSystem,
+  PLAY_ACTION_TOOL_3D,
+  playerSystem3d,
 } from "./rubric.mjs";
 
 let pass = 0,
@@ -326,6 +331,71 @@ console.log("\n--- the verdict schema matches the rubric ---");
   check("no property is an array", keys.every((k) => props[k].type !== "array"));
   check("no property declares sub-properties", keys.every((k) => props[k].properties === undefined));
   check("there is no scores wrapper left", props.scores === undefined);
+}
+
+console.log("\n--- the 3D instrument differs from the 2D one only where it must ---");
+{
+  // The 2D instrument has already produced published-looking numbers, so asking for it
+  // must return the very same objects — not equal copies, the same ones.
+  check("2D dimensions are the canonical array", dimensionsFor("2d") === DIMENSIONS);
+  check("an unknown engine falls back to 2D", dimensionsFor("vr") === DIMENSIONS);
+  check("the 2D verdict tool is the canonical tool", verdictToolFor("2d") === VERDICT_TOOL);
+
+  const d3 = dimensionsFor("3d");
+  check("3D has the same dimensions in the same order", d3.map((d) => d.key).join() === DIMENSIONS.map((d) => d.key).join());
+  check("3D asks the same question of every dimension", d3.every((d, i) => d.question === DIMENSIONS[i].question));
+  const nonVisual = DIMENSIONS.filter((d) => d.group !== "visual");
+  check(
+    "non-visual anchors are identical in 3D",
+    nonVisual.every((d) => JSON.stringify(d3.find((x) => x.key === d.key).anchors) === JSON.stringify(d.anchors))
+  );
+  check(
+    "visual anchors are re-written for 3D",
+    DIMENSIONS.filter((d) => d.group === "visual").every((d) => d3.find((x) => x.key === d.key).anchors[1] !== d.anchors[1])
+  );
+  check("no 3D anchor talks about cut-outs", !JSON.stringify(d3).includes("cut-out"));
+
+  const t3 = verdictToolFor("3d");
+  const k2 = Object.keys(VERDICT_TOOL.input_schema.properties);
+  const k3 = Object.keys(t3.input_schema.properties);
+  check("the 3D verdict has exactly the 2D fields, in order", k2.join() === k3.join());
+  check("the 3D verdict is scalars only too", k3.every((k) => !["object", "array"].includes(t3.input_schema.properties[k].type)));
+  check("the 3D verdict carries the 3D anchors on its fields", t3.input_schema.properties.visual_craft.description.includes("clipping"));
+
+  check("the 3D judge is told it is first-person", /first-person 3D/.test(judgeSystem("3d")));
+  check("the 3D judge is not told to look for cut-out fringes", !/Cut-out figures/.test(judgeSystem("3d")));
+  check("the 2D judge still is", /Cut-out figures/.test(judgeSystem()));
+}
+
+console.log("\n--- the 3D player ---");
+{
+  const props = Object.keys(PLAY_ACTION_TOOL_3D.input_schema.properties);
+  check("the 3D player describes the screen before acting", props[0] === "reading" && props.indexOf("action") > props.indexOf("reading"));
+  const actions = PLAY_ACTION_TOOL_3D.input_schema.properties.action.enum;
+  for (const a of ["choose", "interact", "move_forward", "turn_left", "turn_right", "strafe_left", "wait"]) {
+    check(`the 3D player can ${a.replace("_", " ")}`, actions.includes(a));
+  }
+  check("the 3D player cannot click the stage (there is none)", !actions.includes("click_stage"));
+  check("turns are bounded to a half-circle", PLAY_ACTION_TOOL_3D.input_schema.properties.degrees.maximum === 180);
+  const sys = playerSystem3d({ name: "Aiden", interests: ["machines"] });
+  check("the 3D player is told about the arrow keys", /arrows? turn|left and right arrows/i.test(sys));
+  check("the 3D player is told locked choices need walking to", /dimmed choice|walk over to it/i.test(sys));
+  check("the 3D player is told E takes a turn", /E acts on it/.test(sys) && /takes a turn/.test(sys));
+  check("the 3D player is still told it is playing for fun", /for your own enjoyment/.test(sys));
+}
+
+console.log("\n--- the harness turns at the game's own rate ---");
+{
+  // A "turn 90°" is a key held for as long as the game takes to turn 90°. If the game's
+  // TURN_SPEED changes and this harness does not, every turn the player asks for is
+  // silently wrong, and it reads as the player being bad at navigating.
+  const { readFileSync } = await import("node:fs");
+  const game = readFileSync(new URL("../web/src/scene/SceneRenderer.js", import.meta.url), "utf8");
+  const harness = readFileSync(new URL("./visionPlayer3d.mjs", import.meta.url), "utf8");
+  const gameRate = Number(/const TURN_SPEED = ([\d.]+);/.exec(game)?.[1]);
+  const harnessRate = Number(/TURN_DEGREES_PER_SECOND = \(([\d.]+) \* 180\) \/ Math\.PI/.exec(harness)?.[1]);
+  check("the game declares a turn speed", Number.isFinite(gameRate), String(gameRate));
+  check("the harness turns at the same rate", gameRate === harnessRate, `game ${gameRate} vs harness ${harnessRate}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

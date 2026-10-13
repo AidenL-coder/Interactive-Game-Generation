@@ -23,7 +23,7 @@
 // 3D assets are keyed by exactly those strings, so every one of them is forced back to
 // the manifest before a single asset is requested.
 
-import { descriptionSimilarity, PLACE_MATCH_THRESHOLD, filterPackStats } from "./pack.js";
+import { descriptionSimilarity, PLACE_MATCH_THRESHOLD, filterPackStats, RELOCATION_RULES } from "./pack.js";
 import { PROP_FORMS, GROUND_HALF_EXTENT, MIN_PROPS, MAX_PROPS } from "./worldState.js";
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -42,6 +42,23 @@ export const SKY_BRIEF_LIMIT = 110;
 // The geometry endpoint's own truncation, for the same reason.
 export const GEOMETRY_LABEL_LIMIT = 160;
 
+// How a pack's 3D objects are surfaced.
+//
+//   "textured"  every material gets a tiling texture (the generative default)
+//   "flat"      no material textures: each part is its palette colour, lit by the scene
+//
+// "flat" exists because some art directions are flat by definition. The transformers
+// pack's brief is "clean vector-flat technical-diagram illustration … no texture or
+// hatching, interiors filled with flat color", and asking the image model for a material
+// "in that style" produced busy diagram illustrations covered in glyphs, every object
+// the same dark speckled box. Faithful to that brief is no texture at all.
+export const MATERIAL_MODES = ["textured", "flat"];
+
+/** The pack's material mode, defaulting to textured. */
+export function materialMode(pack) {
+  return MATERIAL_MODES.includes(pack?.world3d?.materials) ? pack.world3d.materials : "textured";
+}
+
 /** Whether a pack carries a 3D world at all. A 2D-only pack is perfectly valid. */
 export function hasWorld3d(pack) {
   return Boolean(pack?.places?.length) && pack.places.every((p) => p?.environment3d);
@@ -56,6 +73,10 @@ export function validatePack3d(pack) {
   if (!pack || typeof pack !== "object") return ["pack is not an object"];
 
   const castById = new Map((pack.cast || []).map((a) => [a.id, a]));
+
+  if (pack.world3d?.materials !== undefined && !MATERIAL_MODES.includes(pack.world3d.materials)) {
+    errors.push(`world3d.materials must be one of ${MATERIAL_MODES.join(", ")}`);
+  }
 
   for (const a of pack.cast || []) {
     const where = `cast member ${JSON.stringify(a?.id ?? "?")}`;
@@ -264,7 +285,8 @@ export function snapToPack3d(worldState, pack, { currentPlaceId = null } = {}) {
       agent_actions: agentActions,
       scene: {
         ...worldState.scene,
-        environment: { ...place.environment3d, place: place.id },
+        // `name` is for the status panel, which otherwise shows the sky brief.
+        environment: { ...place.environment3d, place: place.id, name: place.name },
         props,
       },
     },
@@ -296,7 +318,7 @@ export function repairPackRelocation3d(turn, pack) {
   return {
     turn: {
       ...rest,
-      scene: { environment: { ...target.environment3d, place: target.id }, props },
+      scene: { environment: { ...target.environment3d, place: target.id, name: target.name }, props },
     },
     repaired: true,
     placeId: target.id,
@@ -315,9 +337,8 @@ export function packBriefing3d(pack) {
     "Use ONLY the places and the props listed below. Copy each prop's `label` and `form` exactly as given — they are what its geometry was built from, and a reworded label has no geometry. Copy the place's environment exactly too. You may move props within a room: x, z and scale are yours to stage. You may not invent a place, a prop, or a new description; there is nothing built for anything that is not on this list."
   );
   lines.push("");
-  lines.push(
-    "MOVING BETWEEN PLACES: when the player walks into a different place you MUST set `relocate_to` to that place's id. Writing the move only in the prose changes nothing — the world on screen carries forward and the player reads about the next room while still standing in the last one. If the prose says they moved, the turn must move them."
-  );
+  // The same rule, in the same words, as the 2D briefing — see RELOCATION_RULES.
+  lines.push(RELOCATION_RULES);
   lines.push("");
   for (const p of pack.places || []) {
     const e = p.environment3d || {};

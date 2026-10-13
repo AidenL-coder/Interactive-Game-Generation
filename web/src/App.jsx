@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Stage } from "./stage/Stage.js";
 import { prewarmScene, isLoaded } from "./stage/artCache.js";
 import { startStory, sendChoice2D } from "./api2d.js";
+import { playerFacingError } from "./playerError.js";
 
 import StartScreen2D from "./ui2d/StartScreen2D.jsx";
 import NarrativePanel from "./ui2d/NarrativePanel.jsx";
@@ -169,8 +170,9 @@ export default function App() {
       setCollapsed(false);
     } catch (err) {
       setStreaming(false);
-      setError(err.message);
-      setCurtain((c) => ({ ...(c || {}), error: err.message }));
+      const message = playerFacingError(err, "start");
+      setError(message);
+      setCurtain((c) => ({ ...(c || {}), error: message }));
     } finally {
       setBusy(false);
     }
@@ -247,7 +249,7 @@ export default function App() {
         setSession(turn);
       } catch (err) {
         setStreaming(false);
-        setError(err.message);
+        setError(playerFacingError(err, "turn"));
       } finally {
         setBusy(false);
         setPainting(null);

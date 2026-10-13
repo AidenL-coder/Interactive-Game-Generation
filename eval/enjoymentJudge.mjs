@@ -10,15 +10,15 @@
 // on the first screenshot anyway.
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { VERDICT_TOOL, judgeSystem, DIMENSIONS, mean, repairVerdictShape } from "./rubric.mjs";
+import { verdictToolFor, judgeSystem, DIMENSIONS, mean, repairVerdictShape } from "./rubric.mjs";
 
 /** Builds the interleaved image/label content block list the judge reads. */
-async function buildContent(shotPaths, { premise, turnCount, reachedEnding }) {
+async function buildContent(shotPaths, { premise, turnCount, reachedEnding, engine = "2d" }) {
   const content = [
     {
       type: "text",
       text:
-        `Here is a complete playthrough of one AI-generated illustrated adventure game, ` +
+        `Here is a complete playthrough of one AI-generated ${engine === "3d" ? "first-person 3D" : "illustrated"} adventure game, ` +
         `as ${shotPaths.length} screenshots in the order the player saw them.\n\n` +
         (premise
           ? `The player began from this premise, which they typed in themselves:\n"""\n${premise}\n"""\n\n`
@@ -54,13 +54,16 @@ async function buildContent(shotPaths, { premise, turnCount, reachedEnding }) {
  *
  * @returns {Promise<{verdict: object, usage: object}>}
  */
-export async function judgeOnce({ anthropic, model, shotPaths, premise, turnCount, reachedEnding }) {
-  const content = await buildContent(shotPaths, { premise, turnCount, reachedEnding });
+export async function judgeOnce({ anthropic, model, shotPaths, premise, turnCount, reachedEnding, engine = "2d" }) {
+  // The same nine dimensions either way; only the three visual anchors differ, because a
+  // 3D world fails differently from a painted stage. See dimensionsFor() in rubric.mjs.
+  const VERDICT_TOOL = verdictToolFor(engine);
+  const content = await buildContent(shotPaths, { premise, turnCount, reachedEnding, engine });
 
   const response = await anthropic.messages.create({
     model,
     max_tokens: 4000,
-    system: judgeSystem(),
+    system: judgeSystem(engine),
     messages: [{ role: "user", content }],
     tools: [VERDICT_TOOL],
     tool_choice: { type: "tool", name: VERDICT_TOOL.name },
@@ -105,19 +108,37 @@ export async function judgePlaythrough({
 
   const turnCount = playLog.turns?.length ?? 0;
   const reachedEnding = Boolean(playLog.turns?.some((t) => t.ending));
+  // Logs written before the 3D renderer existed carry no engine; they were all 2D.
+  const engine = playLog.engine === "3d" ? "3d" : "2d";
 
   const runs = [];
   const unscored = new Set();
   let usage = { input_tokens: 0, output_tokens: 0 };
+  // A sample that fails after others have succeeded must not throw the successful ones
+  // away. Observed: the API's credit ran out on the second of three samples, and the
+  // first — already paid for, already scored — was discarded with it. Keep what was
+  // collected and say plainly that the run is short; a reader of the summary must never
+  // mistake one sample for three.
+  let incomplete = null;
   for (let i = 0; i < samples; i++) {
-    const { verdict, missing, usage: u } = await judgeOnce({
-      anthropic,
-      model,
-      shotPaths: paths,
-      premise: playLog.premise,
-      turnCount,
-      reachedEnding,
-    });
+    let result;
+    try {
+      result = await judgeOnce({
+        anthropic,
+        model,
+        shotPaths: paths,
+        premise: playLog.premise,
+        turnCount,
+        reachedEnding,
+        engine,
+      });
+    } catch (err) {
+      if (!runs.length) throw err;
+      incomplete = { wanted: samples, got: runs.length, reason: String(err.message || err).slice(0, 300) };
+      console.warn(`[judge] stopped after ${runs.length} of ${samples} samples: ${incomplete.reason}`);
+      break;
+    }
+    const { verdict, missing, usage: u } = result;
     runs.push(verdict);
     for (const m of missing || []) unscored.add(m);
     usage.input_tokens += u?.input_tokens || 0;
@@ -144,6 +165,9 @@ export async function judgePlaythrough({
   const overallScores = runs.map((r) => r.overall_enjoyment).filter((s) => typeof s === "number");
   const summary = {
     judgedAt: new Date().toISOString(),
+    engine,
+    // Null when every requested sample was scored; otherwise how far it got, and why.
+    incomplete,
     model,
     samples,
     screenshots: paths.length,
@@ -180,6 +204,15 @@ export function formatReport(summary, metrics) {
 
   lines.push("");
   lines.push("=== how much would someone enjoy this ===");
+  if (summary.incomplete) {
+    lines.push("");
+    lines.push(
+      `  !! INCOMPLETE: only ${summary.incomplete.got} of ${summary.incomplete.wanted} judge samples were ` +
+        "scored, so there is no spread to read."
+    );
+    lines.push(`     ${summary.incomplete.reason}`);
+    lines.push("     Re-score with: node eval/play-and-judge.mjs --judge-only <this run> --samples N");
+  }
   lines.push("");
   let group = null;
   for (const d of DIMENSIONS) {

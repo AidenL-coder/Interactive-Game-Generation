@@ -1,4 +1,5 @@
 import { buildPartsMesh, partsHeight } from "./partsMesh.js";
+import { withPack, packKey } from "./assetPack.js";
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
@@ -9,12 +10,12 @@ const cache = new Map();
 
 export function propParts(label, form) {
   if (!label || !String(label).trim()) return Promise.resolve(null);
-  const key = `${form || ""}::${label}`;
+  const key = packKey(`${form || ""}::${label}`);
   if (cache.has(key)) return cache.get(key);
 
   const job = (async () => {
     try {
-      const params = new URLSearchParams({ label });
+      const params = withPack(new URLSearchParams({ label }));
       if (form) params.set("form", form);
       const res = await fetch(`${API_BASE}/geometry?${params}`);
       if (!res.ok) return null;

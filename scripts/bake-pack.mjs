@@ -19,10 +19,11 @@
 //   node scripts/bake-pack.mjs attention-engine --no-verify  # skip the cut-out check
 //   node scripts/bake-pack.mjs attention-engine --3d         # build the 3D world instead
 //   node scripts/bake-pack.mjs attention-engine --3d --check
+//   node scripts/bake-pack.mjs attention-engine --3d --force-materials   # repaint object materials only
 //
 // Verification drives a real browser against the web dev server, so "npm run dev:web"
 // must be running unless --no-verify is passed.
-import { mkdir, writeFile, readFile, stat } from "node:fs/promises";
+import { mkdir, writeFile, readFile, stat, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
@@ -153,10 +154,16 @@ async function pool(items, limit, fn) {
  * then finds them in the pack without the renderer knowing a pack is involved at all.
  */
 async function bake3d(pack) {
-  const { getTexture, textureFileName, textureGenEnabled } = await import("../server/src/textures/textureGen.js");
-  const { getGeometry, geometryFileName, geometryGenEnabled } = await import("../server/src/geometry/geometryGen.js");
+  const { generateTexture, textureFileName, textureGenEnabled } = await import("../server/src/textures/textureGen.js");
+  const { generateGeometry, geometryFileName, geometryGenEnabled } = await import("../server/src/geometry/geometryGen.js");
+  const { styleLine } = await import("../server/src/art/styleBible.js");
+  // The same art direction the 2D stage is painted to, verbatim. Without it the 3D world
+  // was textured from stock-photo defaults — a photographic storm sky over a navy
+  // technical-diagram hall — and a 2D-versus-3D comparison of this pack would have been
+  // measuring "art-directed versus not" as much as "2D versus 3D".
+  const style = styleLine(pack.bible);
   const { packAssetDir, forgetPackAssets } = await import("../server/src/packs/packAssets.js");
-  const { validatePack3d, hasWorld3d } = await import("../shared/pack3d.js");
+  const { validatePack3d, hasWorld3d, materialMode } = await import("../shared/pack3d.js");
 
   if (!hasWorld3d(pack)) {
     console.error(`${pack.id} has no 3D world (no environment3d on its places).`);
@@ -231,7 +238,7 @@ async function bake3d(pack) {
   await pool(missingGeo, CONCURRENCY, async (o) => {
     const t0 = Date.now();
     try {
-      const parts = await getGeometry(o.label, o.form);
+      const parts = await generateGeometry(o.label, o.form, { style });
       if (!Array.isArray(parts) || !parts.length) throw new Error("no parts");
       await writeFile(o.file, JSON.stringify(parts));
       console.log(`  ${o.ids.join(", ").padEnd(26)} ${String(parts.length).padStart(2)} parts  ${((Date.now() - t0) / 1000).toFixed(1)}s`);
@@ -243,8 +250,13 @@ async function bake3d(pack) {
 
   // Wave 2: every material the built geometry names, plus a billboard sprite for any
   // object whose geometry could not be built — that is what the renderer falls back to.
+  // A flat-material pack has no material textures by design (see MATERIAL_MODES in
+  // shared/pack3d.js), so there is nothing to paint, and the sweep below removes any left
+  // over from before the pack was flat.
+  const flat = materialMode(pack) === "flat";
+  if (flat) console.log("\nmaterials: flat palette colour, no textures (world3d.materials = flat)");
   for (const o of objects.values()) {
-    if (!(await exists(o.file))) continue;
+    if (flat || !(await exists(o.file))) continue;
     for (const part of JSON.parse(await readFile(o.file, "utf8"))) {
       // Normalised exactly as the client's materialsIn() does, or the names differ.
       const m = String(part?.material || "").trim().toLowerCase();
@@ -254,7 +266,11 @@ async function bake3d(pack) {
   for (const o of failedGeo) addTexture({ kind: "sprite", propType: o.form, label: o.label }, `${o.ids.join(", ")} sprite fallback`);
 
   const missingTex = [];
-  for (const t of textures.values()) if (force || !(await exists(t.file))) missingTex.push(t);
+  // --force-materials repaints only the object materials, keeping geometry, sky and ground.
+  const forceMaterials = args.includes("--force-materials");
+  for (const t of textures.values()) {
+    if (force || (forceMaterials && t.kind === "prop") || !(await exists(t.file))) missingTex.push(t);
+  }
   console.log(`\npainting ${missingTex.length} texture(s) (${textures.size - missingTex.length} already on disk)…`);
 
   if (missingTex.length && !textureGenEnabled) {
@@ -266,7 +282,13 @@ async function bake3d(pack) {
   await pool(missingTex, CONCURRENCY, async (t) => {
     const t0 = Date.now();
     try {
-      const { buffer } = await getTexture({ kind: t.kind, propType: t.propType, label: t.label, lightLevel: t.lightLevel });
+      const { buffer } = await generateTexture({
+        kind: t.kind,
+        propType: t.propType,
+        label: t.label,
+        lightLevel: t.lightLevel,
+        style,
+      });
       await writeFile(t.file, buffer);
       console.log(`  ${t.why.slice(0, 44).padEnd(44)} ${String(Math.round(buffer.length / 1024)).padStart(4)}kB  ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     } catch (err) {
@@ -286,6 +308,22 @@ async function bake3d(pack) {
     console.log("\nnote: these objects will render as billboards rather than built geometry:");
     for (const o of failedGeo) console.log(`  ${o.ids.join(", ")}`);
   }
+
+  // Sweep anything the manifest no longer asks for. Rebuilding an object can name new
+  // materials, and the textures of the old ones would otherwise ship forever as dead
+  // weight in a directory that is committed to the repository.
+  const keepGeo = new Set([...objects.keys()]);
+  const keepTex = new Set([...textures.keys()]);
+  let swept = 0;
+  for (const [dir, keep] of [[geoDir, keepGeo], [texDir, keepTex]]) {
+    for (const name of await readdir(dir)) {
+      if (keep.has(name)) continue;
+      await unlink(path.join(dir, name));
+      swept++;
+    }
+  }
+  if (swept) console.log(`\nremoved ${swept} asset(s) the manifest no longer uses`);
+
   console.log(`\n${pack.id} 3D world is complete: ${objects.size - failedGeo.length} objects built, ${textures.size} textures on disk.`);
 }
 

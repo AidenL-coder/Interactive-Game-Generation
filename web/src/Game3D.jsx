@@ -7,6 +7,9 @@ import PrewarmOverlay from "./ui/PrewarmOverlay.jsx";
 import EndingScreen from "./ui/EndingScreen.jsx";
 import { prewarmScene } from "./scene/prewarm.js";
 import { startSession, sendChoice } from "./api.js";
+import { setAssetPack } from "./scene/assetPack.js";
+import { playerFacingError } from "./playerError.js";
+import { shortName } from "./ui2d/labels.js";
 
 // The first-person 3D game: the other arm of the renderer comparison. It was the original
 // front end, was unmounted when the 2D stage became the primary game, and is mounted again
@@ -97,6 +100,7 @@ export default function Game3D() {
   }, [phase, busy, playing, session?.sessionId]);
 
   function handleRestart() {
+    setAssetPack(null);
     setSession(null);
     setPhase("start");
     setError(null);
@@ -108,6 +112,9 @@ export default function Game3D() {
     setError(null);
     try {
       const result = await startSession(payload);
+      // Before a single asset is requested: from here every texture and geometry fetch
+      // names this pack, so it is served the pack's own art-directed assets.
+      setAssetPack(result.ablation?.packId || null, result.world3d);
 
       // Generate every asset before showing the world. For a pre-generated pack this is
       // a read from disk and takes a moment; for a typed premise it is the slow part.
@@ -124,7 +131,7 @@ export default function Game3D() {
       setSession(result);
       setPhase("playing");
     } catch (err) {
-      setError(err.message);
+      setError(playerFacingError(err, "start"));
       setPrewarm(null);
     } finally {
       setBusy(false);
@@ -162,7 +169,7 @@ export default function Game3D() {
 
       setSession(result);
     } catch (err) {
-      setError(err.message);
+      setError(playerFacingError(err, "turn"));
     } finally {
       setBusy(false);
     }
@@ -192,8 +199,11 @@ export default function Game3D() {
         <>
           <div className="crosshair" />
           {focusLabel && (
+            // The short name, not the label: a label is a full painter's brief, and
+            // printing it under the crosshair put a sentence about the Keeper's coat,
+            // cyan wire and clasped hands in the middle of the screen.
             <div className="focus-label">
-              {focusLabel}
+              {shortName(focusLabel)}
               <span className="focus-key">E</span>
             </div>
           )}

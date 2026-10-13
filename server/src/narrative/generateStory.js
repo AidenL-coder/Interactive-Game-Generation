@@ -337,6 +337,8 @@ export async function generateStory({
     // place of a beat that was otherwise fine. Anything left invalid after this is a
     // genuinely broken turn and still gets a retry.
     let candidate = raw;
+    // Set only when a repair was tried and still failed; see below.
+    let afterRepair = null;
     if (!check.valid) {
       let fixed = raw;
       const notes = [];
@@ -386,6 +388,15 @@ export async function generateStory({
           console.warn(`[generateStory] repaired turn: ${notes.join("; ")}`);
           candidate = fixed;
           check = recheck;
+        } else {
+          // What was left AFTER repair is the real diagnosis; the raw violations only say
+          // what the repairs were attempting. Without this a failed turn logged "choice
+          // gated on unknown actor" — which the repair had in fact fixed — and hid the
+          // duplicate-id fault the repair itself had introduced.
+          console.warn(
+            `[generateStory] repair (${notes.join("; ")}) still left: ${recheck.violations.join("; ")}`
+          );
+          afterRepair = recheck.violations;
         }
       }
     }
@@ -447,7 +458,7 @@ export async function generateStory({
       break;
     }
 
-    lastViolations = check.violations;
+    lastViolations = afterRepair ? afterRepair.map((v) => `after repair: ${v}`) : check.violations;
     console.warn(
       `[generateStory] returned keys: ${Object.keys(raw || {}).join(", ") || "(none)"}` +
         ` | stop_reason: ${response.stop_reason} | out tokens: ${response.usage?.output_tokens}`

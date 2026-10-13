@@ -113,13 +113,19 @@ button:disabled { opacity: 0.6; cursor: default; }
   min-height: 0;
 }
 /* Fade the cut-off point rather than slicing mid-word, so it reads as "there's more"
-   instead of as broken text. */
+   instead of as broken text.
+
+   Six lines, not three. At three — fading out from the 60% mark — a player saw about two
+   lines of a four-paragraph beat, and a judged 3D playthrough reported the story "cut off
+   with READ MORE" on three separate turns: the player was answering the Keeper's
+   questions without having read them. At full width a line holds ~180 characters, so six
+   carries most beats whole and still leaves the world in view. */
 .narrative-text.clamped {
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 6;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  mask-image: linear-gradient(to bottom, #000 60%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 80%, transparent 100%);
 }
 .narrative-toggle {
   align-self: flex-start;

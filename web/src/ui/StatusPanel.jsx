@@ -29,7 +29,9 @@ export default function StatusPanel({ worldState, turnIndex }) {
 
   // The scene names itself now, rather than being labelled from a fixed biome/mood/time
   // vocabulary that no longer exists.
-  const place = worldState?.scene?.environment?.description;
+  // A pre-built place has a name ("The Tokenizer Yard"); a generated one only has its
+  // description, which is a painter's brief for the sky rather than something to read.
+  const place = worldState?.scene?.environment?.name || worldState?.scene?.environment?.description;
 
   // The objective is the reason to play at all, so it sits at the top of the panel with
   // honest progress under it — a wasted turn should visibly be a wasted turn.

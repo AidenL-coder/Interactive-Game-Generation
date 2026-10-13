@@ -5,7 +5,7 @@
 // model asked for was discarded. Nothing visibly broke — the renderer applies a delta
 // without re-reading the environment — which is exactly why it needs a test rather than
 // a screenshot. Run with: npm test
-import { materializeDeltaTurn } from "./generateScene.js";
+import { materializeDeltaTurn, repairChoiceGates } from "./generateScene.js";
 
 let pass = 0,
   fail = 0;
@@ -85,6 +85,34 @@ console.log("\n--- no previous world ---");
   const out = materializeDeltaTurn({ narrative: "x", scene_delta: {} }, null);
   check("survives a missing previous world", Array.isArray(out.scene.props) && typeof out.scene.environment === "object");
 }
+
+console.log("\n--- dangling choice gates are repaired, not fatal ---");
+{
+  // The exact faults of a real failed turn: the player had just entered the Gallery of
+  // Heads and the model gated a choice on the previous room's archway. Both attempts
+  // failed validation, and the player saw a raw "world generation failed" error.
+  const turn = {
+    narrative: "You glance back the way you came.",
+    choices: [
+      { id: "c1", text: "Step up to the head bank", requires_near: "head_bank" },
+      { id: "c2", text: "Look back at the archway", requires_near: "archway_deep" },
+      { id: "c3", text: "Ask the Keeper what comes next" },
+    ],
+  };
+  const { turn: fixed, repaired } = repairChoiceGates(turn, ["head_bank", "keeper_01", "concat_loom"]);
+  check("one dangling gate is repaired", repaired === 1);
+  check("the dangling gate is lifted", fixed.choices[1].requires_near === undefined);
+  check("the choice itself is kept", fixed.choices[1].text === "Look back at the archway");
+  check("a valid gate survives", fixed.choices[0].requires_near === "head_bank");
+  check("an ungated choice is untouched", fixed.choices[2].requires_near === undefined);
+  check("the input is not mutated", turn.choices[1].requires_near === "archway_deep");
+}
+{
+  const turn = { narrative: "x", choices: [{ id: "c1", text: "Wait", requires_near: "keeper_01" }] };
+  const { turn: same, repaired } = repairChoiceGates(turn, ["keeper_01"]);
+  check("nothing dangling means nothing repaired", repaired === 0 && same === turn);
+}
+check("no choices is survivable", repairChoiceGates({ narrative: "x" }, []).repaired === 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

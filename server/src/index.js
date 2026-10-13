@@ -11,6 +11,8 @@ import { getModel, modelGenEnabled } from "./models/modelGen.js";
 import { getGeometry, geometryGenEnabled } from "./geometry/geometryGen.js";
 import { router as router2d } from "./routes2d.js";
 import { loadPack, listPacks } from "./packs/loadPack.js";
+import { isPackId } from "./packs/packAssets.js";
+import { materialMode } from "iwg-shared/pack3d";
 import { PROP_FORMS } from "iwg-shared";
 
 const app = express();
@@ -28,6 +30,9 @@ function publicSession(session) {
     turnIndex: session.turnIndex,
     worldState: session.lastWorldState,
     placeId: session.placeId ?? null,
+    // How the pack's 3D world is surfaced, so the client does not request material
+    // textures a flat-coloured pack never had.
+    world3d: session.pack?.world3d ?? null,
   };
 }
 
@@ -39,7 +44,20 @@ app.get("/api/texture", async (req, res) => {
   // be served on a machine with no image key at all. getTexture only demands the key
   // when it would actually have to generate something, and the catch below turns that
   // into the same 503 the renderer already treats as "use the procedural fallback".
-  const { kind = "ground", type: propType, label, light_level: lightLevel } = req.query;
+  const { kind = "ground", type: propType, label, light_level: lightLevel, pack } = req.query;
+  // Which pack's shipped textures to look in; anything that is not a valid pack id is
+  // simply "no pack", never an error — the texture is then generated as usual.
+  const packId = isPackId(pack) ? pack : null;
+
+  // A flat-material pack has no material textures by design, and the client never asks
+  // for one. If something does, refuse rather than falling through to the shared cache,
+  // which would serve a stock-photo texture onto a game whose brief is flat colour.
+  if (packId && kind === "prop") {
+    const owner = await loadPack(packId).catch(() => null);
+    if (owner && materialMode(owner) === "flat") {
+      return res.status(404).json({ error: `${owner.title} draws materials as flat colour` });
+    }
+  }
 
   if (!["ground", "sky", "prop", "sprite"].includes(kind)) {
     return res.status(400).json({ error: "kind must be 'ground', 'sky', 'prop', or 'sprite'" });
@@ -62,6 +80,7 @@ app.get("/api/texture", async (req, res) => {
       propType,
       label: String(label),
       lightLevel: Number(lightLevel) || 0.7,
+      packId,
     });
     res.set("Content-Type", contentType);
     res.set("Cache-Control", "public, max-age=86400");
@@ -78,7 +97,8 @@ app.get("/api/texture", async (req, res) => {
 // Objects assembled from primitive parts — real geometry, built per description and
 // cached forever. This is the primary way props are rendered.
 app.get("/api/geometry", async (req, res) => {
-  const { label, form } = req.query;
+  const { label, form, pack } = req.query;
+  const packId = isPackId(pack) ? pack : null;
 
   if (!label || !String(label).trim()) {
     return res.status(400).json({ error: "label is required" });
@@ -88,7 +108,7 @@ app.get("/api/geometry", async (req, res) => {
   }
 
   try {
-    const parts = await getGeometry(String(label), form ? String(form) : undefined);
+    const parts = await getGeometry(String(label), form ? String(form) : undefined, { packId });
     res.set("Cache-Control", "public, max-age=604800");
     res.json({ parts });
   } catch (err) {
